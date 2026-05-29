@@ -12,25 +12,25 @@ impl SessionSegment {
 
     fn format_duration(ms: u64) -> String {
         if ms < 1000 {
-            format!("{}ms", ms)
+            format!("{ms}ms")
         } else if ms < 60_000 {
             let seconds = ms / 1000;
-            format!("{}s", seconds)
+            format!("{seconds}s")
         } else if ms < 3_600_000 {
             let minutes = ms / 60_000;
             let seconds = (ms % 60_000) / 1000;
             if seconds == 0 {
-                format!("{}m", minutes)
+                format!("{minutes}m")
             } else {
-                format!("{}m{}s", minutes, seconds)
+                format!("{minutes}m{seconds}s")
             }
         } else {
             let hours = ms / 3_600_000;
             let minutes = (ms % 3_600_000) / 60_000;
             if minutes == 0 {
-                format!("{}h", hours)
+                format!("{hours}h")
             } else {
-                format!("{}h{}m", hours, minutes)
+                format!("{hours}h{minutes}m")
             }
         }
     }
@@ -50,13 +50,13 @@ impl Segment for SessionSegment {
         // Secondary display: line changes if available (green for +, red for -)
         let secondary = match (cost_data.total_lines_added, cost_data.total_lines_removed) {
             (Some(added), Some(removed)) if added > 0 || removed > 0 => {
-                format!("\x1b[32m+{}\x1b[0m \x1b[31m-{}\x1b[0m", added, removed)
+                format!("\x1b[32m+{added}\x1b[0m \x1b[31m-{removed}\x1b[0m")
             }
             (Some(added), None) if added > 0 => {
-                format!("\x1b[32m+{}\x1b[0m", added)
+                format!("\x1b[32m+{added}\x1b[0m")
             }
             (None, Some(removed)) if removed > 0 => {
-                format!("\x1b[31m-{}\x1b[0m", removed)
+                format!("\x1b[31m-{removed}\x1b[0m")
             }
             _ => String::new(),
         };

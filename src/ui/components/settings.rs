@@ -108,11 +108,11 @@ impl SettingsComponent {
                     13 => "Light Magenta".to_string(),
                     14 => "Light Cyan".to_string(),
                     15 => "Gray".to_string(),
-                    _ => format!("ANSI {}", c16),
+                    _ => format!("ANSI {c16}"),
                 },
-                Some(crate::config::AnsiColor::Color256 { c256 }) => format!("256:{}", c256),
+                Some(crate::config::AnsiColor::Color256 { c256 }) => format!("256:{c256}"),
                 Some(crate::config::AnsiColor::Rgb { r, g, b }) => {
-                    format!("RGB({},{},{})", r, g, b)
+                    format!("RGB({r},{g},{b})")
                 }
                 None => "Default".to_string(),
             };
@@ -134,11 +134,11 @@ impl SettingsComponent {
                     13 => "Light Magenta".to_string(),
                     14 => "Light Cyan".to_string(),
                     15 => "Gray".to_string(),
-                    _ => format!("ANSI {}", c16),
+                    _ => format!("ANSI {c16}"),
                 },
-                Some(crate::config::AnsiColor::Color256 { c256 }) => format!("256:{}", c256),
+                Some(crate::config::AnsiColor::Color256 { c256 }) => format!("256:{c256}"),
                 Some(crate::config::AnsiColor::Rgb { r, g, b }) => {
-                    format!("RGB({},{},{})", r, g, b)
+                    format!("RGB({r},{g},{b})")
                 }
                 None => "Default".to_string(),
             };
@@ -184,11 +184,11 @@ impl SettingsComponent {
                     13 => "Light Magenta".to_string(),
                     14 => "Light Cyan".to_string(),
                     15 => "Gray".to_string(),
-                    _ => format!("ANSI {}", c16),
+                    _ => format!("ANSI {c16}"),
                 },
-                Some(crate::config::AnsiColor::Color256 { c256 }) => format!("256:{}", c256),
+                Some(crate::config::AnsiColor::Color256 { c256 }) => format!("256:{c256}"),
                 Some(crate::config::AnsiColor::Rgb { r, g, b }) => {
-                    format!("RGB({},{},{})", r, g, b)
+                    format!("RGB({r},{g},{b})")
                 }
                 None => "None".to_string(),
             };
@@ -209,7 +209,7 @@ impl SettingsComponent {
                 Line::from(spans)
             };
             let lines = vec![
-                Line::from(format!("{} Segment", segment_name)),
+                Line::from(format!("{segment_name} Segment")),
                 create_field_line(
                     FieldSelection::Enabled,
                     vec![Span::raw(format!(
@@ -230,21 +230,21 @@ impl SettingsComponent {
                 create_field_line(
                     FieldSelection::IconColor,
                     vec![
-                        Span::raw(format!("├─ Icon Color: {} ", icon_color_desc)),
+                        Span::raw(format!("├─ Icon Color: {icon_color_desc} ")),
                         Span::styled("██".to_string(), Style::default().fg(icon_ratatui_color)),
                     ],
                 ),
                 create_field_line(
                     FieldSelection::TextColor,
                     vec![
-                        Span::raw(format!("├─ Text Color: {} ", text_color_desc)),
+                        Span::raw(format!("├─ Text Color: {text_color_desc} ")),
                         Span::styled("██".to_string(), Style::default().fg(text_ratatui_color)),
                     ],
                 ),
                 create_field_line(
                     FieldSelection::BackgroundColor,
                     vec![
-                        Span::raw(format!("├─ Background Color: {} ", background_color_desc)),
+                        Span::raw(format!("├─ Background Color: {background_color_desc} ")),
                         if segment.colors.background.is_some() {
                             Span::styled(
                                 "██".to_string(),

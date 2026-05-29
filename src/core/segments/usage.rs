@@ -1,16 +1,19 @@
 use super::{Segment, SegmentData};
 use crate::config::{InputData, SegmentId};
 use crate::utils::credentials;
-use chrono::{DateTime, Datelike, Duration, Local, Timelike, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// Subset of /api/oauth/usage we render. serde ignores all other windows
+// (seven_day_sonnet, seven_day_opus, extra_usage, ...) automatically.
 #[derive(Debug, Deserialize)]
 struct ApiUsageResponse {
     five_hour: UsagePeriod,
     seven_day: UsagePeriod,
 }
 
+// `utilization` is a 0-100 percentage (e.g. 15.0 == 15%), not a 0-1 fraction.
 #[derive(Debug, Deserialize)]
 struct UsagePeriod {
     utilization: f64,
@@ -20,7 +23,10 @@ struct UsagePeriod {
 #[derive(Debug, Serialize, Deserialize)]
 struct ApiUsageCache {
     five_hour_utilization: f64,
+    #[serde(default)]
+    five_hour_resets_at: Option<String>,
     seven_day_utilization: f64,
+    // Legacy field (7d reset time) kept for backward compatibility with old caches.
     resets_at: Option<String>,
     cached_at: String,
 }
@@ -47,19 +53,27 @@ impl UsageSegment {
         }
     }
 
-    fn format_reset_time(reset_time_str: Option<&str>) -> String {
+    /// Time until the window resets, as a compact relative string (e.g. "2d6h", "5h30m", "45m").
+    fn format_reset_relative(reset_time_str: Option<&str>) -> String {
         if let Some(time_str) = reset_time_str {
             if let Ok(dt) = DateTime::parse_from_rfc3339(time_str) {
-                let mut local_dt = dt.with_timezone(&Local);
-                if local_dt.minute() > 45 {
-                    local_dt += Duration::hours(1);
+                let secs = dt
+                    .with_timezone(&Utc)
+                    .signed_duration_since(Utc::now())
+                    .num_seconds();
+                if secs <= 0 {
+                    return "now".to_string();
                 }
-                return format!(
-                    "{}-{}-{}",
-                    local_dt.month(),
-                    local_dt.day(),
-                    local_dt.hour()
-                );
+                let days = secs / 86_400;
+                let hours = (secs % 86_400) / 3_600;
+                let mins = (secs % 3_600) / 60;
+                return if days > 0 {
+                    format!("{days}d{hours}h")
+                } else if hours > 0 {
+                    format!("{hours}h{mins}m")
+                } else {
+                    format!("{mins}m")
+                };
             }
         }
         "?".to_string()
@@ -116,7 +130,7 @@ impl UsageSegment {
             Ok(output) if output.status.success() => {
                 let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !version.is_empty() {
-                    return format!("claude-code/{}", version);
+                    return format!("claude-code/{version}");
                 }
             }
             _ => {}
@@ -129,7 +143,7 @@ impl UsageSegment {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .ok()?;
-        let settings_path = format!("{}/.claude/settings.json", home);
+        let settings_path = format!("{home}/.claude/settings.json");
 
         let content = std::fs::read_to_string(&settings_path).ok()?;
         let settings: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -149,7 +163,7 @@ impl UsageSegment {
         token: &str,
         timeout_secs: u64,
     ) -> Option<ApiUsageResponse> {
-        let url = format!("{}/api/oauth/usage", api_base_url);
+        let url = format!("{api_base_url}/api/oauth/usage");
         let user_agent = Self::get_claude_code_version();
 
         let agent = if let Some(proxy_url) = Self::get_proxy_from_settings() {
@@ -167,7 +181,7 @@ impl UsageSegment {
 
         let response = agent
             .get(&url)
-            .header("Authorization", &format!("Bearer {}", token))
+            .header("Authorization", &format!("Bearer {token}"))
             .header("anthropic-beta", "oauth-2025-04-20")
             .header("User-Agent", &user_agent)
             .config()
@@ -209,18 +223,23 @@ impl Segment for UsageSegment {
             .map(|cache| self.is_cache_valid(cache, cache_duration))
             .unwrap_or(false);
 
-        let (five_hour_util, seven_day_util, resets_at) = if use_cached {
-            let cache = cached_data.unwrap();
+        // Each tuple element: 5h util, 5h reset time, 7d-all util.
+        let from_cache = |c: ApiUsageCache| {
             (
-                cache.five_hour_utilization,
-                cache.seven_day_utilization,
-                cache.resets_at,
+                c.five_hour_utilization,
+                c.five_hour_resets_at,
+                c.seven_day_utilization,
             )
+        };
+
+        let (five_hour_util, five_hour_reset, seven_day_util) = if use_cached {
+            from_cache(cached_data.unwrap())
         } else {
             match self.fetch_api_usage(api_base_url, &token, timeout) {
                 Some(response) => {
                     let cache = ApiUsageCache {
                         five_hour_utilization: response.five_hour.utilization,
+                        five_hour_resets_at: response.five_hour.resets_at.clone(),
                         seven_day_utilization: response.seven_day.utilization,
                         resets_at: response.seven_day.resets_at.clone(),
                         cached_at: Utc::now().to_rfc3339(),
@@ -228,39 +247,44 @@ impl Segment for UsageSegment {
                     self.save_cache(&cache);
                     (
                         response.five_hour.utilization,
+                        response.five_hour.resets_at,
                         response.seven_day.utilization,
-                        response.seven_day.resets_at,
                     )
                 }
-                None => {
-                    if let Some(cache) = cached_data {
-                        (
-                            cache.five_hour_utilization,
-                            cache.seven_day_utilization,
-                            cache.resets_at,
-                        )
-                    } else {
-                        return None;
-                    }
-                }
+                None => match cached_data {
+                    Some(cache) => from_cache(cache),
+                    None => return None,
+                },
             }
         };
 
-        let dynamic_icon = Self::get_circle_icon(seven_day_util / 100.0);
-        let five_hour_percent = five_hour_util.round() as u8;
-        let primary = format!("{}%", five_hour_percent);
-        let secondary = format!("· {}", Self::format_reset_time(resets_at.as_deref()));
+        // Icon and color both reflect the highest-watermark window.
+        let max_util = five_hour_util.max(seven_day_util);
+        let dynamic_icon = Self::get_circle_icon(max_util / 100.0);
+        // Threshold coloring: <50% green, 50-80% yellow, >80% red.
+        let dynamic_color = if max_util >= 80.0 {
+            "red"
+        } else if max_util >= 50.0 {
+            "yellow"
+        } else {
+            "green"
+        };
+
+        let primary = format!(
+            "5h {}%  7d {}%",
+            five_hour_util.round() as u8,
+            seven_day_util.round() as u8
+        );
+
+        // The 5h window always resets soonest, so it's the most actionable countdown.
+        let secondary = format!(
+            "\u{b7} \u{27f3}{}", // · (middle dot) + ⟳ (clockwise open circle arrow)
+            Self::format_reset_relative(five_hour_reset.as_deref())
+        );
 
         let mut metadata = HashMap::new();
         metadata.insert("dynamic_icon".to_string(), dynamic_icon);
-        metadata.insert(
-            "five_hour_utilization".to_string(),
-            five_hour_util.to_string(),
-        );
-        metadata.insert(
-            "seven_day_utilization".to_string(),
-            seven_day_util.to_string(),
-        );
+        metadata.insert("dynamic_color".to_string(), dynamic_color.to_string());
 
         Some(SegmentData {
             primary,

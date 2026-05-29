@@ -20,7 +20,7 @@ impl Segment for CostSegment {
             if cost == 0.0 || cost < 0.01 {
                 "$0".to_string()
             } else {
-                format!("${:.2}", cost)
+                format!("${cost:.2}")
             }
         } else {
             return None;

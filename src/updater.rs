@@ -31,7 +31,7 @@ impl UpdateState {
     /// Get status bar display text
     pub fn status_text(&self) -> Option<String> {
         match &self.status {
-            UpdateStatus::Ready { version, .. } => Some(format!("\u{f06b0} v{}", version)),
+            UpdateStatus::Ready { version, .. } => Some(format!("\u{f06b0} v{version}")),
             _ => None,
         }
     }

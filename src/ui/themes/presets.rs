@@ -35,7 +35,7 @@ impl ThemePresets {
     /// Load theme from file system
     pub fn load_theme_from_file(theme_name: &str) -> Result<Config, Box<dyn std::error::Error>> {
         let themes_dir = Self::get_themes_path();
-        let theme_path = themes_dir.join(format!("{}.toml", theme_name));
+        let theme_path = themes_dir.join(format!("{theme_name}.toml"));
 
         if !theme_path.exists() {
             return Err(format!("Theme file not found: {}", theme_path.display()).into());
@@ -62,7 +62,7 @@ impl ThemePresets {
     /// Save current config as a new theme
     pub fn save_theme(theme_name: &str, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
         let themes_dir = Self::get_themes_path();
-        let theme_path = themes_dir.join(format!("{}.toml", theme_name));
+        let theme_path = themes_dir.join(format!("{theme_name}.toml"));
 
         // Create themes directory if it doesn't exist
         std::fs::create_dir_all(&themes_dir)?;

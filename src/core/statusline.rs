@@ -220,12 +220,18 @@ impl StatusLineGenerator {
             self.get_icon(config)
         };
 
+        // A segment may request dynamic (threshold-based) coloring via metadata,
+        // which overrides its configured icon/text colors (e.g. the usage segment).
+        let dynamic_color = Self::dynamic_color_from_metadata(data);
+        let icon_color = dynamic_color.as_ref().or(config.colors.icon.as_ref());
+        let text_color = dynamic_color.as_ref().or(config.colors.text.as_ref());
+
         // Apply background color to the entire segment if set
         if let Some(bg_color) = &config.colors.background {
             let bg_code = self.apply_background_color(bg_color);
 
             // Build the entire segment content first
-            let icon_colored = if let Some(icon_color) = &config.colors.icon {
+            let icon_colored = if let Some(icon_color) = icon_color {
                 self.apply_color(&icon, Some(icon_color))
                     .replace("\x1b[0m", "")
             } else {
@@ -233,51 +239,46 @@ impl StatusLineGenerator {
             };
 
             let text_styled = self
-                .apply_style(
-                    &data.primary,
-                    config.colors.text.as_ref(),
-                    config.styles.text_bold,
-                )
+                .apply_style(&data.primary, text_color, config.styles.text_bold)
                 .replace("\x1b[0m", "");
 
-            let mut segment_content = format!(" {} {} ", icon_colored, text_styled);
+            let mut segment_content = format!(" {icon_colored} {text_styled} ");
 
             if !data.secondary.is_empty() {
                 let secondary_styled = self
-                    .apply_style(
-                        &data.secondary,
-                        config.colors.text.as_ref(),
-                        config.styles.text_bold,
-                    )
+                    .apply_style(&data.secondary, text_color, config.styles.text_bold)
                     .replace("\x1b[0m", "");
-                segment_content.push_str(&format!("{} ", secondary_styled));
+                segment_content.push_str(&format!("{secondary_styled} "));
             }
 
             // Apply background to the entire content and reset at the end
-            format!("{}{}\x1b[49m", bg_code, segment_content)
+            format!("{bg_code}{segment_content}\x1b[49m")
         } else {
             // No background color, use original logic
-            let icon_colored = self.apply_color(&icon, config.colors.icon.as_ref());
-            let text_styled = self.apply_style(
-                &data.primary,
-                config.colors.text.as_ref(),
-                config.styles.text_bold,
-            );
+            let icon_colored = self.apply_color(&icon, icon_color);
+            let text_styled = self.apply_style(&data.primary, text_color, config.styles.text_bold);
 
-            let mut segment = format!("{} {}", icon_colored, text_styled);
+            let mut segment = format!("{icon_colored} {text_styled}");
 
             if !data.secondary.is_empty() {
                 segment.push_str(&format!(
                     " {}",
-                    self.apply_style(
-                        &data.secondary,
-                        config.colors.text.as_ref(),
-                        config.styles.text_bold
-                    )
+                    self.apply_style(&data.secondary, text_color, config.styles.text_bold)
                 ));
             }
 
             segment
+        }
+    }
+
+    /// Map a segment's optional `dynamic_color` metadata to a concrete color that
+    /// overrides the configured icon/text colors. Used for threshold coloring.
+    fn dynamic_color_from_metadata(data: &SegmentData) -> Option<AnsiColor> {
+        match data.metadata.get("dynamic_color").map(String::as_str) {
+            Some("green") => Some(AnsiColor::Color16 { c16: 2 }),
+            Some("yellow") => Some(AnsiColor::Color16 { c16: 3 }),
+            Some("red") => Some(AnsiColor::Color16 { c16: 1 }),
+            _ => None,
         }
     }
 
@@ -293,13 +294,13 @@ impl StatusLineGenerator {
         match color {
             Some(AnsiColor::Color16 { c16 }) => {
                 let code = if *c16 < 8 { 30 + c16 } else { 90 + (c16 - 8) };
-                format!("\x1b[{}m{}\x1b[0m", code, text)
+                format!("\x1b[{code}m{text}\x1b[0m")
             }
             Some(AnsiColor::Color256 { c256 }) => {
-                format!("\x1b[38;5;{}m{}\x1b[0m", c256, text)
+                format!("\x1b[38;5;{c256}m{text}\x1b[0m")
             }
             Some(AnsiColor::Rgb { r, g, b }) => {
-                format!("\x1b[38;2;{};{};{}m{}\x1b[0m", r, g, b, text)
+                format!("\x1b[38;2;{r};{g};{b}m{text}\x1b[0m")
             }
             None => text.to_string(),
         }
@@ -345,13 +346,13 @@ impl StatusLineGenerator {
         match color {
             AnsiColor::Color16 { c16 } => {
                 let code = if *c16 < 8 { 40 + c16 } else { 100 + (c16 - 8) };
-                format!("\x1b[{}m", code)
+                format!("\x1b[{code}m")
             }
             AnsiColor::Color256 { c256 } => {
-                format!("\x1b[48;5;{}m", c256)
+                format!("\x1b[48;5;{c256}m")
             }
             AnsiColor::Rgb { r, g, b } => {
-                format!("\x1b[48;2;{};{};{}m", r, g, b)
+                format!("\x1b[48;2;{r};{g};{b}m")
             }
         }
     }
@@ -417,17 +418,17 @@ impl StatusLineGenerator {
                 // Arrow background = current segment's background
                 let fg_code = self.color_to_foreground_code(prev);
                 let bg_code = self.apply_background_color(curr);
-                format!("{}{}{}\x1b[0m", bg_code, fg_code, arrow_char)
+                format!("{bg_code}{fg_code}{arrow_char}\x1b[0m")
             }
             (Some(prev), None) => {
                 // Previous segment has background, current doesn't
                 let fg_code = self.color_to_foreground_code(prev);
-                format!("{}{}\x1b[0m", fg_code, arrow_char)
+                format!("{fg_code}{arrow_char}\x1b[0m")
             }
             (None, Some(curr)) => {
                 // Current segment has background, previous doesn't
                 let bg_code = self.apply_background_color(curr);
-                format!("{}{}\x1b[0m", bg_code, arrow_char)
+                format!("{bg_code}{arrow_char}\x1b[0m")
             }
             (None, None) => {
                 // Neither segment has background color
@@ -441,13 +442,13 @@ impl StatusLineGenerator {
         match color {
             AnsiColor::Color16 { c16 } => {
                 let code = if *c16 < 8 { 30 + c16 } else { 90 + (c16 - 8) };
-                format!("\x1b[{}m", code)
+                format!("\x1b[{code}m")
             }
             AnsiColor::Color256 { c256 } => {
-                format!("\x1b[38;5;{}m", c256)
+                format!("\x1b[38;5;{c256}m")
             }
             AnsiColor::Rgb { r, g, b } => {
-                format!("\x1b[38;2;{};{};{}m", r, g, b)
+                format!("\x1b[38;2;{r};{g};{b}m")
             }
         }
     }

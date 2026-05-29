@@ -32,9 +32,9 @@ impl Segment for ContextWindowSegment {
                 let context_used_rate = (context_used_token as f64 / context_limit as f64) * 100.0;
 
                 let percentage = if context_used_rate.fract() == 0.0 {
-                    format!("{:.0}%", context_used_rate)
+                    format!("{context_used_rate:.0}%")
                 } else {
-                    format!("{:.1}%", context_used_rate)
+                    format!("{context_used_rate:.1}%")
                 };
 
                 let tokens = if context_used_token >= 1000 {
@@ -42,7 +42,7 @@ impl Segment for ContextWindowSegment {
                     if k_value.fract() == 0.0 {
                         format!("{}k", k_value as u32)
                     } else {
-                        format!("{:.1}k", k_value)
+                        format!("{k_value:.1}k")
                     }
                 } else {
                     context_used_token.to_string()
@@ -71,8 +71,13 @@ impl Segment for ContextWindowSegment {
         metadata.insert("limit".to_string(), context_limit.to_string());
         metadata.insert("model".to_string(), input.model.id.clone());
 
+        let primary = match context_used_token_opt {
+            Some(_) => format!("{tokens_display} ({percentage_display})"),
+            None => "-".to_string(),
+        };
+
         Some(SegmentData {
-            primary: format!("{} · {} tokens", percentage_display, tokens_display),
+            primary,
             secondary: String::new(),
             metadata,
         })

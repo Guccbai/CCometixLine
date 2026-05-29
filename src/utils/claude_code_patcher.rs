@@ -191,10 +191,7 @@ impl ClaudeCodePatcher {
                         let end = child.end_byte();
                         let text = self.get_node_text(child);
 
-                        println!(
-                            "Found Spinner verbose property: '{}' at {}-{}",
-                            text, start, end
-                        );
+                        println!("Found Spinner verbose property: '{text}' at {start}-{end}");
 
                         return Some(LocationResult {
                             start_index: start,
@@ -335,8 +332,7 @@ impl ClaudeCodePatcher {
         let condition_text = self.get_node_text(condition);
 
         println!(
-            "  Found ESC ternary: condition='{}' at {}-{}",
-            condition_text, condition_start, condition_end
+            "  Found ESC ternary: condition='{condition_text}' at {condition_start}-{condition_end}"
         );
         println!(
             "    consequence contains key:\"esc\": {}",
@@ -362,7 +358,7 @@ impl ClaudeCodePatcher {
     fn find_chrome_subscription_check(&self, root: Node) -> Option<LocationResult> {
         let anchor = "tengu_claude_in_chrome_setup";
         let anchor_pos = self.file_content.find(anchor)?;
-        println!("Found anchor '{}' at position: {}", anchor, anchor_pos);
+        println!("Found anchor '{anchor}' at position: {anchor_pos}");
 
         self.find_chrome_check_in_node(root, anchor_pos)
     }
@@ -393,7 +389,7 @@ impl ClaudeCodePatcher {
             return None;
         }
 
-        println!("Found Chrome check pattern: '{}'", node_text);
+        println!("Found Chrome check pattern: '{node_text}'");
         self.find_and_expression_in_node(node)
     }
 
@@ -410,10 +406,7 @@ impl ClaudeCodePatcher {
                     let and_end = right.end_byte();
                     let and_text = self.file_content[and_start..and_end].to_string();
 
-                    println!(
-                        "Part to remove: '{}' at {}-{}",
-                        and_text, and_start, and_end
-                    );
+                    println!("Part to remove: '{and_text}' at {and_start}-{and_end}");
 
                     return Some(LocationResult {
                         start_index: and_start,
@@ -441,10 +434,7 @@ impl ClaudeCodePatcher {
     fn find_chrome_command_message(&self, root: Node) -> Option<LocationResult> {
         let anchor = r#""Claude in Chrome requires a claude.ai subscription.""#;
         let anchor_pos = self.file_content.find(anchor)?;
-        println!(
-            "Found /chrome subscription message at position: {}",
-            anchor_pos
-        );
+        println!("Found /chrome subscription message at position: {anchor_pos}");
 
         self.find_chrome_message_condition(root, anchor_pos)
     }
@@ -498,10 +488,7 @@ impl ClaudeCodePatcher {
             let replace_end = op_end;
             let replace_text = self.file_content[replace_start..replace_end].to_string();
 
-            println!(
-                "  Found condition '{}' at {}-{}",
-                replace_text, replace_start, replace_end
-            );
+            println!("  Found condition '{replace_text}' at {replace_start}-{replace_end}");
 
             return Some(LocationResult {
                 start_index: replace_start,
@@ -521,10 +508,7 @@ impl ClaudeCodePatcher {
     fn find_chrome_startup_notification_check(&self, root: Node) -> Option<LocationResult> {
         let anchor = r#"key:"chrome-requires-subscription""#;
         let anchor_pos = self.file_content.find(anchor)?;
-        println!(
-            "Found Chrome startup notification anchor at position: {}",
-            anchor_pos
-        );
+        println!("Found Chrome startup notification anchor at position: {anchor_pos}");
 
         self.find_startup_notification_if(root, anchor_pos)
     }
@@ -567,7 +551,7 @@ impl ClaudeCodePatcher {
                         let start = child.start_byte();
                         let end = child.end_byte();
 
-                        println!("  Found condition '{}' at {}-{}", child_text, start, end);
+                        println!("  Found condition '{child_text}' at {start}-{end}");
 
                         return Some(LocationResult {
                             start_index: start,
@@ -595,15 +579,9 @@ impl ClaudeCodePatcher {
         let old_changed = &self.file_content[start_index..end_index];
         let old_after = &self.file_content[end_index..context_end_old];
 
-        println!("\n--- {} Diff ---", title);
-        println!(
-            "OLD: {}\x1b[31m{}\x1b[0m{}",
-            old_before, old_changed, old_after
-        );
-        println!(
-            "NEW: {}\x1b[32m{}\x1b[0m{}",
-            old_before, injected_text, old_after
-        );
+        println!("\n--- {title} Diff ---");
+        println!("OLD: {old_before}\x1b[31m{old_changed}\x1b[0m{old_after}");
+        println!("NEW: {old_before}\x1b[32m{injected_text}\x1b[0m{old_after}");
         println!("--- End Diff ---\n");
     }
 
@@ -823,9 +801,9 @@ impl ClaudeCodePatcher {
         println!("\n📊 Patch Results:");
         for (name, success) in results {
             if *success {
-                println!("  ✅ {}", name);
+                println!("  ✅ {name}");
             } else {
-                println!("  ❌ {}", name);
+                println!("  ❌ {name}");
             }
         }
 
@@ -833,12 +811,9 @@ impl ClaudeCodePatcher {
         let total_count = results.len();
 
         if success_count == total_count {
-            println!("\n✅ All {} patches applied successfully!", total_count);
+            println!("\n✅ All {total_count} patches applied successfully!");
         } else {
-            println!(
-                "\n⚠️ {}/{} patches applied successfully",
-                success_count, total_count
-            );
+            println!("\n⚠️ {success_count}/{total_count} patches applied successfully");
         }
     }
 }

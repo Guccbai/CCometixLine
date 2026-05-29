@@ -86,7 +86,7 @@ impl HelpComponent {
                         .add_modifier(Modifier::BOLD),
                 ));
                 current_line_spans.push(Span::styled(
-                    format!(" {}", description),
+                    format!(" {description}"),
                     Style::default().fg(Color::Gray),
                 ));
                 current_width += item_width;
@@ -105,7 +105,7 @@ impl HelpComponent {
                         .add_modifier(Modifier::BOLD),
                 ));
                 current_line_spans.push(Span::styled(
-                    format!(" {}", description),
+                    format!(" {description}"),
                     Style::default().fg(Color::Gray),
                 ));
                 current_width = item_width;

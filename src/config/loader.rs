@@ -45,7 +45,7 @@ impl ConfigLoader {
         let mut created_any = false;
 
         for theme_name in &builtin_themes {
-            let theme_path = themes_dir.join(format!("{}.toml", theme_name));
+            let theme_path = themes_dir.join(format!("{theme_name}.toml"));
 
             if !theme_path.exists() {
                 let theme_config = crate::ui::themes::ThemePresets::get_theme(theme_name);
@@ -98,7 +98,7 @@ impl ConfigLoader {
         ];
 
         for theme_name in &builtin_themes {
-            let theme_path = themes_dir.join(format!("{}.toml", theme_name));
+            let theme_path = themes_dir.join(format!("{theme_name}.toml"));
 
             if !theme_path.exists() {
                 let theme_config = crate::ui::themes::ThemePresets::get_theme(theme_name);
@@ -194,7 +194,7 @@ impl Config {
     /// Print configuration as TOML
     pub fn print(&self) -> Result<(), Box<dyn std::error::Error>> {
         let content = toml::to_string_pretty(self)?;
-        println!("{}", content);
+        println!("{content}");
         Ok(())
     }
 }

@@ -651,8 +651,8 @@ impl ColorPickerComponent {
                 AnsiColor::Color16 { c16 } => {
                     format!("████ Color 16: {} ({})", c16, get_color_name(*c16))
                 }
-                AnsiColor::Color256 { c256 } => format!("████ Color 256: {}", c256),
-                AnsiColor::Rgb { r, g, b } => format!("████ RGB: ({}, {}, {})", r, g, b),
+                AnsiColor::Color256 { c256 } => format!("████ Color 256: {c256}"),
+                AnsiColor::Rgb { r, g, b } => format!("████ RGB: ({r}, {g}, {b})"),
             }
         } else {
             "████ No color selected".to_string()

@@ -17,12 +17,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         use ccometixline::utils::ClaudeCodePatcher;
 
         println!("🔧 Claude Code Context Warning Disabler");
-        println!("Target file: {}", claude_path);
+        println!("Target file: {claude_path}");
 
         // Create backup in same directory
-        let backup_path = format!("{}.backup", claude_path);
+        let backup_path = format!("{claude_path}.backup");
         std::fs::copy(&claude_path, &backup_path)?;
-        println!("📦 Created backup: {}", backup_path);
+        println!("📦 Created backup: {backup_path}");
 
         // Load and patch
         let mut patcher = ClaudeCodePatcher::new(&claude_path)?;
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         ClaudeCodePatcher::print_summary(&results);
         println!("💡 To restore warnings, replace your cli.js with the backup file:");
-        println!("   cp {} {}", backup_path, claude_path);
+        println!("   cp {backup_path} {claude_path}");
 
         return Ok(());
     }
@@ -71,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let generator = StatusLineGenerator::new(config);
     let statusline = generator.generate(segments_data);
 
-    println!("{}", statusline);
+    println!("{statusline}");
 
     Ok(())
 }

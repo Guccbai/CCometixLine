@@ -142,7 +142,7 @@ impl MainMenu {
                     }
                     Err(e) => {
                         self.status_message = Some(StatusMessage {
-                            message: format!("✗ Error: {}", e),
+                            message: format!("✗ Error: {e}"),
                             is_error: true,
                         });
                     }
@@ -161,14 +161,14 @@ impl MainMenu {
                         }
                         Err(e) => {
                             self.status_message = Some(StatusMessage {
-                                message: format!("✗ Invalid: {}", e),
+                                message: format!("✗ Invalid: {e}"),
                                 is_error: true,
                             });
                         }
                     },
                     Err(e) => {
                         self.status_message = Some(StatusMessage {
-                            message: format!("✗ Failed to load: {}", e),
+                            message: format!("✗ Failed to load: {e}"),
                             is_error: true,
                         });
                     }
@@ -243,7 +243,7 @@ impl MainMenu {
 
                 let content = Line::from(vec![
                     Span::styled(*title, style),
-                    Span::styled(format!(" - {}", desc), Style::default().fg(Color::Gray)),
+                    Span::styled(format!(" - {desc}"), Style::default().fg(Color::Gray)),
                 ]);
 
                 ListItem::new(content).style(style)

@@ -68,7 +68,7 @@ impl App {
     pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Ensure themes directory and built-in themes exist
         if let Err(e) = crate::config::loader::ConfigLoader::init_themes() {
-            eprintln!("Warning: Failed to initialize themes: {}", e);
+            eprintln!("Warning: Failed to initialize themes: {e}");
         }
 
         // Load config
@@ -195,7 +195,7 @@ impl App {
                                 // s: Save config to config.toml
                                 if let Err(e) = app.save_config() {
                                     app.status_message =
-                                        Some(format!("Failed to save config: {}", e));
+                                        Some(format!("Failed to save config: {e}"));
                                 } else {
                                     app.status_message =
                                         Some("Configuration saved to config.toml!".to_string());
@@ -265,9 +265,9 @@ impl App {
             } else {
                 "[ ]"
             };
-            let theme_part = format!("{} {}", marker, theme);
+            let theme_part = format!("{marker} {theme}");
             let separator = if i == 0 { "" } else { "  " };
-            let part_with_sep = format!("{}{}", separator, theme_part);
+            let part_with_sep = format!("{separator}{theme_part}");
 
             let would_fit = current_line_length + part_with_sep.len() <= content_width as usize;
 
@@ -624,7 +624,7 @@ impl App {
         let next_index = (current_index + 1) % themes.len();
         let next_theme = &themes[next_index];
 
-        self.status_message = Some(format!("Switching to theme: {}", next_theme));
+        self.status_message = Some(format!("Switching to theme: {next_theme}"));
         self.switch_to_theme(next_theme);
     }
 
@@ -632,7 +632,7 @@ impl App {
         self.config = crate::ui::themes::ThemePresets::get_theme(theme_name);
         self.selected_segment = 0;
         self.preview.update_preview(&self.config);
-        self.status_message = Some(format!("Switched to {} theme", theme_name));
+        self.status_message = Some(format!("Switched to {theme_name} theme"));
     }
 
     /// Reset current theme to its default configuration
@@ -641,7 +641,7 @@ impl App {
         self.config = crate::ui::themes::ThemePresets::get_theme(&current_theme);
         self.selected_segment = 0;
         self.preview.update_preview(&self.config);
-        self.status_message = Some(format!("Reset {} theme to defaults", current_theme));
+        self.status_message = Some(format!("Reset {current_theme} theme to defaults"));
     }
 
     fn save_config(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -678,11 +678,11 @@ impl App {
         let current_theme = &self.config.theme;
         match crate::ui::themes::ThemePresets::save_theme(current_theme, &self.config) {
             Ok(_) => {
-                self.status_message = Some(format!("Wrote config to theme: {}", current_theme));
+                self.status_message = Some(format!("Wrote config to theme: {current_theme}"));
             }
             Err(e) => {
                 self.status_message =
-                    Some(format!("Failed to write to theme {}: {}", current_theme, e));
+                    Some(format!("Failed to write to theme {current_theme}: {e}"));
             }
         }
     }
@@ -693,10 +693,10 @@ impl App {
             Ok(_) => {
                 // Update current theme to the new one
                 self.config.theme = theme_name.to_string();
-                self.status_message = Some(format!("Saved as new theme: {}", theme_name));
+                self.status_message = Some(format!("Saved as new theme: {theme_name}"));
             }
             Err(e) => {
-                self.status_message = Some(format!("Failed to save theme {}: {}", theme_name, e));
+                self.status_message = Some(format!("Failed to save theme {theme_name}: {e}"));
             }
         }
     }

@@ -45,7 +45,7 @@ impl ModelSegment {
             };
             // Still apply context modifier suffix (e.g., " 1M") if present
             match model_config.get_display_suffix(id) {
-                Some(suffix) => format!("{}{}", base, suffix),
+                Some(suffix) => format!("{base}{suffix}"),
                 None => base,
             }
         }

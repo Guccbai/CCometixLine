@@ -63,11 +63,11 @@ impl SegmentListComponent {
                     // Selected item with colored cursor
                     ListItem::new(Line::from(vec![
                         Span::styled("▶ ", Style::default().fg(Color::Cyan)),
-                        Span::raw(format!("{} {}", enabled_marker, segment_name)),
+                        Span::raw(format!("{enabled_marker} {segment_name}")),
                     ]))
                 } else {
                     // Non-selected item
-                    ListItem::new(format!("  {} {}", enabled_marker, segment_name))
+                    ListItem::new(format!("  {enabled_marker} {segment_name}"))
                 }
             })
             .collect();

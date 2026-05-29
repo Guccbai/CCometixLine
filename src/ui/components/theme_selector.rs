@@ -34,9 +34,9 @@ impl ThemeSelectorComponent {
             } else {
                 "[ ]"
             };
-            let theme_part = format!("{} {}", marker, theme);
+            let theme_part = format!("{marker} {theme}");
             let separator = if i == 0 { "" } else { "  " };
-            let part_with_sep = format!("{}{}", separator, theme_part);
+            let part_with_sep = format!("{separator}{theme_part}");
 
             // Check if this part fits in current line
             let would_fit = current_line.len() + part_with_sep.len() <= content_width as usize;
@@ -59,7 +59,7 @@ impl ThemeSelectorComponent {
         let separator_display = format!("\nSeparator: \"{}\"", config.style.separator);
 
         let full_text = format!("{}{}", lines.join("\n"), separator_display);
-        let title = format!("Themes{}", modified_indicator);
+        let title = format!("Themes{modified_indicator}");
         let theme_selector = Paragraph::new(full_text)
             .block(Block::default().borders(Borders::ALL).title(title))
             .wrap(ratatui::widgets::Wrap { trim: false });
