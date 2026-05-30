@@ -34,3 +34,15 @@ pub use output_style::OutputStyleSegment;
 pub use session::SessionSegment;
 pub use update::UpdateSegment;
 pub use usage::UsageSegment;
+
+/// Render a fixed-width block-character progress bar, e.g. "[██████░░░░]".
+/// `percent` is 0-100; out-of-range values are clamped.
+pub fn progress_bar(percent: f64, width: usize) -> String {
+    let ratio = (percent / 100.0).clamp(0.0, 1.0);
+    let filled = ((ratio * width as f64).round() as usize).min(width);
+    format!(
+        "[{}{}]",
+        "\u{2588}".repeat(filled),         // █ full block
+        "\u{2591}".repeat(width - filled)  // ░ light shade
+    )
+}

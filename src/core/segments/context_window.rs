@@ -1,4 +1,4 @@
-use super::{Segment, SegmentData};
+use super::{progress_bar, Segment, SegmentData};
 use crate::config::{InputData, ModelConfig, SegmentId, TranscriptEntry};
 use std::collections::HashMap;
 use std::fs;
@@ -18,6 +18,20 @@ impl ContextWindowSegment {
         let model_config = ModelConfig::load();
         model_config.get_context_limit(model_id)
     }
+
+    /// Format a raw token count compactly, e.g. 124500 -> "124.5k", 850 -> "850".
+    fn format_token_count(tokens: u32) -> String {
+        if tokens >= 1000 {
+            let k = tokens as f64 / 1000.0;
+            if k.fract() == 0.0 {
+                format!("{}k", k as u32)
+            } else {
+                format!("{k:.1}k")
+            }
+        } else {
+            tokens.to_string()
+        }
+    }
 }
 
 impl Segment for ContextWindowSegment {
@@ -26,44 +40,31 @@ impl Segment for ContextWindowSegment {
         let context_limit = Self::get_context_limit_for_model(&input.model.id);
 
         let context_used_token_opt = parse_transcript_usage(&input.transcript_path);
+        let rate_opt = context_used_token_opt.map(|t| (t as f64 / context_limit as f64) * 100.0);
 
-        let (percentage_display, tokens_display) = match context_used_token_opt {
-            Some(context_used_token) => {
-                let context_used_rate = (context_used_token as f64 / context_limit as f64) * 100.0;
+        let percentage_display = match rate_opt {
+            Some(r) if r.fract() == 0.0 => format!("{r:.0}%"),
+            Some(r) => format!("{r:.1}%"),
+            None => "-".to_string(),
+        };
 
-                let percentage = if context_used_rate.fract() == 0.0 {
-                    format!("{context_used_rate:.0}%")
-                } else {
-                    format!("{context_used_rate:.1}%")
-                };
-
-                let tokens = if context_used_token >= 1000 {
-                    let k_value = context_used_token as f64 / 1000.0;
-                    if k_value.fract() == 0.0 {
-                        format!("{}k", k_value as u32)
-                    } else {
-                        format!("{k_value:.1}k")
-                    }
-                } else {
-                    context_used_token.to_string()
-                };
-
-                (percentage, tokens)
-            }
-            None => {
-                // No usage data available
-                ("-".to_string(), "-".to_string())
-            }
+        // Bar (5-wide, matching usage) + percentage + token count, e.g. "[█░░░░] 62.3% 124.5k".
+        let primary = match (rate_opt, context_used_token_opt) {
+            (Some(r), Some(t)) => format!(
+                "{} {percentage_display} {}",
+                progress_bar(r, 5),
+                Self::format_token_count(t)
+            ),
+            _ => "-".to_string(),
         };
 
         let mut metadata = HashMap::new();
-        match context_used_token_opt {
-            Some(context_used_token) => {
-                let context_used_rate = (context_used_token as f64 / context_limit as f64) * 100.0;
-                metadata.insert("tokens".to_string(), context_used_token.to_string());
-                metadata.insert("percentage".to_string(), context_used_rate.to_string());
+        match (context_used_token_opt, rate_opt) {
+            (Some(token), Some(rate)) => {
+                metadata.insert("tokens".to_string(), token.to_string());
+                metadata.insert("percentage".to_string(), rate.to_string());
             }
-            None => {
+            _ => {
                 metadata.insert("tokens".to_string(), "-".to_string());
                 metadata.insert("percentage".to_string(), "-".to_string());
             }
@@ -71,10 +72,17 @@ impl Segment for ContextWindowSegment {
         metadata.insert("limit".to_string(), context_limit.to_string());
         metadata.insert("model".to_string(), input.model.id.clone());
 
-        let primary = match context_used_token_opt {
-            Some(_) => format!("{tokens_display} ({percentage_display})"),
-            None => "-".to_string(),
-        };
+        // Threshold coloring (OMC thresholds): <70% green, 70-85% yellow, >85% red.
+        if let Some(rate) = rate_opt {
+            let color = if rate >= 85.0 {
+                "red"
+            } else if rate >= 70.0 {
+                "yellow"
+            } else {
+                "green"
+            };
+            metadata.insert("dynamic_color".to_string(), color.to_string());
+        }
 
         Some(SegmentData {
             primary,

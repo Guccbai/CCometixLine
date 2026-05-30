@@ -1,4 +1,4 @@
-use super::{Segment, SegmentData};
+use super::{progress_bar, Segment, SegmentData};
 use crate::config::{InputData, SegmentId};
 use crate::utils::credentials;
 use chrono::{DateTime, Utc};
@@ -223,16 +223,17 @@ impl Segment for UsageSegment {
             .map(|cache| self.is_cache_valid(cache, cache_duration))
             .unwrap_or(false);
 
-        // Each tuple element: 5h util, 5h reset time, 7d-all util.
+        // Each tuple element: 5h util, 5h reset time, 7d-all util, 7d reset time.
         let from_cache = |c: ApiUsageCache| {
             (
                 c.five_hour_utilization,
                 c.five_hour_resets_at,
                 c.seven_day_utilization,
+                c.resets_at,
             )
         };
 
-        let (five_hour_util, five_hour_reset, seven_day_util) = if use_cached {
+        let (five_hour_util, five_hour_reset, seven_day_util, seven_day_reset) = if use_cached {
             from_cache(cached_data.unwrap())
         } else {
             match self.fetch_api_usage(api_base_url, &token, timeout) {
@@ -249,6 +250,7 @@ impl Segment for UsageSegment {
                         response.five_hour.utilization,
                         response.five_hour.resets_at,
                         response.seven_day.utilization,
+                        response.seven_day.resets_at,
                     )
                 }
                 None => match cached_data {
@@ -258,37 +260,27 @@ impl Segment for UsageSegment {
             }
         };
 
-        // Icon and color both reflect the highest-watermark window.
+        // Icon reflects the highest-watermark window; color stays fixed (config).
         let max_util = five_hour_util.max(seven_day_util);
         let dynamic_icon = Self::get_circle_icon(max_util / 100.0);
-        // Threshold coloring: <50% green, 50-80% yellow, >80% red.
-        let dynamic_color = if max_util >= 80.0 {
-            "red"
-        } else if max_util >= 50.0 {
-            "yellow"
-        } else {
-            "green"
-        };
 
+        // Each window: bar + percentage + relative reset countdown.
+        let five_bar = progress_bar(five_hour_util, 5);
+        let seven_bar = progress_bar(seven_day_util, 5);
         let primary = format!(
-            "5h {}%  7d {}%",
+            "5h {five_bar} {}% {}  7d {seven_bar} {}% {}",
             five_hour_util.round() as u8,
-            seven_day_util.round() as u8
-        );
-
-        // The 5h window always resets soonest, so it's the most actionable countdown.
-        let secondary = format!(
-            "\u{b7} \u{27f3}{}", // · (middle dot) + ⟳ (clockwise open circle arrow)
-            Self::format_reset_relative(five_hour_reset.as_deref())
+            Self::format_reset_relative(five_hour_reset.as_deref()),
+            seven_day_util.round() as u8,
+            Self::format_reset_relative(seven_day_reset.as_deref()),
         );
 
         let mut metadata = HashMap::new();
         metadata.insert("dynamic_icon".to_string(), dynamic_icon);
-        metadata.insert("dynamic_color".to_string(), dynamic_color.to_string());
 
         Some(SegmentData {
             primary,
-            secondary,
+            secondary: String::new(),
             metadata,
         })
     }
