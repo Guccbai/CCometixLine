@@ -101,6 +101,7 @@ impl ModelConfig {
                 BuiltinModelFamily::new("sonnet", "Sonnet", 200_000),
                 BuiltinModelFamily::new("opus", "Opus", 200_000),
                 BuiltinModelFamily::new("haiku", "Haiku", 200_000),
+                BuiltinModelFamily::new("fable", "Fable", 1_000_000),
             ]
         })
     }

@@ -111,7 +111,7 @@ impl ThemePresets {
     pub fn get_available_themes() -> Vec<(&'static str, &'static str)> {
         vec![
             ("cometix", "Cometix theme"),
-            ("default", "Default theme with emoji icons"),
+            ("default", "Default theme with Nerd Font icons"),
             ("minimal", "Minimal theme with reduced colors"),
             ("gruvbox", "Gruvbox color scheme"),
             ("nord", "Nord color scheme"),
@@ -145,7 +145,7 @@ impl ThemePresets {
     pub fn get_default() -> Config {
         Config {
             style: StyleConfig {
-                mode: StyleMode::Plain,
+                mode: StyleMode::NerdFont,
                 separator: " | ".to_string(),
             },
             segments: vec![

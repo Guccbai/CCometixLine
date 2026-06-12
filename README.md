@@ -37,30 +37,30 @@ The statusline shows: Model | Directory | Git Branch Status | Context Window Inf
 
 ## Installation
 
-### Quick Install (Recommended)
+This is a personal fork of [Haleclipse/CCometixLine](https://github.com/Haleclipse/CCometixLine) and is not published to npm. Install by building from source.
 
-Install via npm (works on all platforms):
+### Build from Source
+
+Requires the [Rust toolchain](https://rustup.rs/) (stable).
 
 ```bash
-# Install globally
-npm install -g @cometix/ccline
+git clone https://github.com/Guccbai/CCometixLine.git
+cd CCometixLine
+cargo build --release
 
-# Or using yarn
-yarn global add @cometix/ccline
+# Linux/macOS
+mkdir -p ~/.claude/ccline
+cp target/release/ccometixline ~/.claude/ccline/ccline
+chmod +x ~/.claude/ccline/ccline
 
-# Or using pnpm
-pnpm add -g @cometix/ccline
-```
-
-Use npm mirror for faster download:
-```bash
-npm install -g @cometix/ccline --registry https://registry.npmmirror.com
+# Windows (PowerShell)
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude\ccline"
+copy target\release\ccometixline.exe "$env:USERPROFILE\.claude\ccline\ccline.exe"
 ```
 
 After installation:
-- ✅ Global command `ccline` is available everywhere
 - ⚙️ Follow the configuration steps below to integrate with Claude Code
-- 🎨 Run `ccline -c` to open configuration panel for theme selection
+- 🎨 Run `~/.claude/ccline/ccline -c` to open configuration panel for theme selection
 
 ### Claude Code Configuration
 
@@ -78,101 +78,14 @@ Add to your Claude Code `settings.json`:
 ```
 
 > **Note for Windows users:** Starting from Claude Code v2.1.47+, Unix-style path parsing is supported on Windows. The `~` symbol is automatically expanded to your user home directory. **Do not use `%USERPROFILE%`** - it no longer works reliably in v2.1.47+.
-> - Recommended: `~/.claude/ccline/ccline` (works on all platforms)
-> - Alternative: `"ccline"` (requires npm global installation)
-
-**Fallback (npm installation):**
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "ccline",
-    "padding": 0
-  }
-}
-```
-*Use this if npm global installation is available in PATH*
 
 ### Update
 
 ```bash
-npm update -g @cometix/ccline
-```
-
-<details>
-<summary>Manual Installation (Click to expand)</summary>
-
-Alternatively, download from [Releases](https://github.com/Haleclipse/CCometixLine/releases):
-
-#### Linux
-
-#### Option 1: Dynamic Binary (Recommended)
-```bash
-mkdir -p ~/.claude/ccline
-wget https://github.com/Haleclipse/CCometixLine/releases/latest/download/ccline-linux-x64.tar.gz
-tar -xzf ccline-linux-x64.tar.gz
-cp ccline ~/.claude/ccline/
-chmod +x ~/.claude/ccline/ccline
-```
-*Requires: Ubuntu 22.04+, CentOS 9+, Debian 11+, RHEL 9+ (glibc 2.35+)*
-
-#### Option 2: Static Binary (Universal Compatibility)
-```bash
-mkdir -p ~/.claude/ccline
-wget https://github.com/Haleclipse/CCometixLine/releases/latest/download/ccline-linux-x64-static.tar.gz
-tar -xzf ccline-linux-x64-static.tar.gz
-cp ccline ~/.claude/ccline/
-chmod +x ~/.claude/ccline/ccline
-```
-*Works on any Linux distribution (static, no dependencies)*
-
-#### macOS (Intel)
-
-```bash  
-mkdir -p ~/.claude/ccline
-wget https://github.com/Haleclipse/CCometixLine/releases/latest/download/ccline-macos-x64.tar.gz
-tar -xzf ccline-macos-x64.tar.gz
-cp ccline ~/.claude/ccline/
-chmod +x ~/.claude/ccline/ccline
-```
-
-#### macOS (Apple Silicon)
-
-```bash
-mkdir -p ~/.claude/ccline  
-wget https://github.com/Haleclipse/CCometixLine/releases/latest/download/ccline-macos-arm64.tar.gz
-tar -xzf ccline-macos-arm64.tar.gz
-cp ccline ~/.claude/ccline/
-chmod +x ~/.claude/ccline/ccline
-```
-
-#### Windows
-
-```powershell
-# Create directory and download
-New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude\ccline"
-Invoke-WebRequest -Uri "https://github.com/Haleclipse/CCometixLine/releases/latest/download/ccline-windows-x64.zip" -OutFile "ccline-windows-x64.zip"
-Expand-Archive -Path "ccline-windows-x64.zip" -DestinationPath "."
-Move-Item "ccline.exe" "$env:USERPROFILE\.claude\ccline\"
-```
-
-</details>
-
-### Build from Source
-
-```bash
-git clone https://github.com/Haleclipse/CCometixLine.git
 cd CCometixLine
+git pull
 cargo build --release
-
-# Linux/macOS
-mkdir -p ~/.claude/ccline
 cp target/release/ccometixline ~/.claude/ccline/ccline
-chmod +x ~/.claude/ccline/ccline
-
-# Windows (PowerShell)
-New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude\ccline"
-copy target\release\ccometixline.exe "$env:USERPROFILE\.claude\ccline\ccline.exe"
 ```
 
 ## Usage
@@ -228,7 +141,7 @@ CCometixLine supports full configuration via TOML files and interactive TUI:
 - **Configuration file**: `~/.claude/ccline/config.toml`
 - **Interactive TUI**: `ccline --config` for real-time editing with preview
 - **Theme files**: `~/.claude/ccline/themes/*.toml` for custom themes
-- **Automatic initialization**: `ccline --init` creates default configuration
+- **Automatic initialization**: theme files are created automatically on first run
 
 ### Available Segments
 
