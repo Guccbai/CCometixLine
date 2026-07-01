@@ -98,8 +98,8 @@ impl ModelConfig {
     fn builtin_families() -> &'static [BuiltinModelFamily] {
         BUILTIN_FAMILIES.get_or_init(|| {
             vec![
-                BuiltinModelFamily::new("sonnet", "Sonnet", 200_000),
-                BuiltinModelFamily::new("opus", "Opus", 200_000),
+                BuiltinModelFamily::new("sonnet", "Sonnet", 1_000_000),
+                BuiltinModelFamily::new("opus", "Opus", 1_000_000),
                 BuiltinModelFamily::new("haiku", "Haiku", 200_000),
                 BuiltinModelFamily::new("fable", "Fable", 1_000_000),
             ]
