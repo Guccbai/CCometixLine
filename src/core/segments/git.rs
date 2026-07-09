@@ -54,7 +54,6 @@ impl GitSegment {
         } else {
             None
         };
-
         Some(GitInfo {
             branch,
             status,

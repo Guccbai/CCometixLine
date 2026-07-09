@@ -39,30 +39,69 @@ impl StatusLineGenerator {
     }
 
     pub fn generate(&self, segments: Vec<(SegmentConfig, SegmentData)>) -> String {
-        let mut output = Vec::new();
         let enabled_segments: Vec<_> = segments
             .into_iter()
             .filter(|(config, _)| config.enabled)
             .collect();
 
-        for (config, data) in enabled_segments.iter() {
-            let rendered = self.render_segment(config, data);
-            if !rendered.is_empty() {
-                output.push(rendered);
+        // Segments render on the row given by their `line` option (default 0);
+        // Claude Code displays each output line as a separate statusline row.
+        let mut line_numbers: Vec<u64> = enabled_segments
+            .iter()
+            .map(|(config, _)| Self::segment_line(config))
+            .collect();
+        line_numbers.sort_unstable();
+        line_numbers.dedup();
+
+        let mut lines = Vec::new();
+        for line_number in line_numbers {
+            let line_segments: Vec<_> = enabled_segments
+                .iter()
+                .filter(|(config, _)| Self::segment_line(config) == line_number)
+                .cloned()
+                .collect();
+
+            let mut output = Vec::new();
+            for (config, data) in line_segments.iter() {
+                let rendered = self.render_segment(config, data);
+                if !rendered.is_empty() {
+                    output.push(rendered);
+                }
+            }
+
+            if output.is_empty() {
+                continue;
+            }
+
+            // Handle Powerline arrow separators with color transition
+            let joined = if self.config.style.separator == "\u{e0b0}" {
+                self.join_with_powerline_arrows(&output, &line_segments)
+            } else {
+                // For all other separators, use white color and simple join
+                self.join_with_white_separators(&output)
+            };
+            lines.push(joined);
+        }
+
+        // Multi-row output gets a dim "⏵⏵" lead-in per row, echoing Claude
+        // Code's own footer hints; single-row output stays undecorated.
+        // Powerline capsules carry their own visual structure, so they skip it.
+        if lines.len() > 1 && self.config.style.separator != "\u{e0b0}" {
+            for line in lines.iter_mut() {
+                *line = format!("\x1b[90m\u{23f5}\u{23f5}\x1b[0m {line}"); // ⏵⏵
             }
         }
 
-        if output.is_empty() {
-            return String::new();
-        }
+        lines.join("\n")
+    }
 
-        // Handle Powerline arrow separators with color transition
-        if self.config.style.separator == "\u{e0b0}" {
-            self.join_with_powerline_arrows(&output, &enabled_segments)
-        } else {
-            // For all other separators, use white color and simple join
-            self.join_with_white_separators(&output)
-        }
+    /// Row a segment renders on, from its `line` option (default 0).
+    fn segment_line(config: &SegmentConfig) -> u64 {
+        config
+            .options
+            .get("line")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
     }
 
     /// Generate statusline for TUI preview with proper width calculation
@@ -214,16 +253,22 @@ impl StatusLineGenerator {
     }
 
     fn render_segment(&self, config: &SegmentConfig, data: &SegmentData) -> String {
-        let icon = if let Some(dynamic_icon) = data.metadata.get("dynamic_icon") {
+        // An explicitly empty configured icon means "no icon" and also opts
+        // out of dynamic_icon overrides (e.g. the usage circle glyphs).
+        let configured_icon = self.get_icon(config);
+        let icon = if configured_icon.is_empty() {
+            String::new()
+        } else if let Some(dynamic_icon) = data.metadata.get("dynamic_icon") {
             dynamic_icon.clone()
         } else {
-            self.get_icon(config)
+            configured_icon
         };
 
         // A segment may request dynamic (threshold-based) coloring via metadata,
-        // which overrides its configured icon/text colors (e.g. the usage segment).
+        // which overrides its configured text color (e.g. the usage segment).
+        // Icons keep their configured color so label-style icons stay muted.
         let dynamic_color = Self::dynamic_color_from_metadata(data);
-        let icon_color = dynamic_color.as_ref().or(config.colors.icon.as_ref());
+        let icon_color = config.colors.icon.as_ref();
         let text_color = dynamic_color.as_ref().or(config.colors.text.as_ref());
 
         // Apply background color to the entire segment if set
@@ -242,7 +287,11 @@ impl StatusLineGenerator {
                 .apply_style(&data.primary, text_color, config.styles.text_bold)
                 .replace("\x1b[0m", "");
 
-            let mut segment_content = format!(" {icon_colored} {text_styled} ");
+            let mut segment_content = if icon.is_empty() {
+                format!(" {text_styled} ")
+            } else {
+                format!(" {icon_colored} {text_styled} ")
+            };
 
             if !data.secondary.is_empty() {
                 let secondary_styled = self
@@ -258,7 +307,11 @@ impl StatusLineGenerator {
             let icon_colored = self.apply_color(&icon, icon_color);
             let text_styled = self.apply_style(&data.primary, text_color, config.styles.text_bold);
 
-            let mut segment = format!("{icon_colored} {text_styled}");
+            let mut segment = if icon.is_empty() {
+                text_styled
+            } else {
+                format!("{icon_colored} {text_styled}")
+            };
 
             if !data.secondary.is_empty() {
                 segment.push_str(&format!(
@@ -357,15 +410,15 @@ impl StatusLineGenerator {
         }
     }
 
-    /// Join segments with white separators (non-Powerline)
+    /// Join segments with dim separators (non-Powerline)
     fn join_with_white_separators(&self, rendered_segments: &[String]) -> String {
         if rendered_segments.is_empty() {
             return String::new();
         }
 
-        // Use white color for separator
-        let white_separator = format!("\x1b[37m{}\x1b[0m", self.config.style.separator);
-        rendered_segments.join(&white_separator)
+        // Bright black keeps separators visible without competing with content
+        let dim_separator = format!("\x1b[90m{}\x1b[0m", self.config.style.separator);
+        rendered_segments.join(&dim_separator)
     }
 
     /// Join segments with Powerline arrow separators with proper color transitions
@@ -376,10 +429,6 @@ impl StatusLineGenerator {
     ) -> String {
         if rendered_segments.is_empty() {
             return String::new();
-        }
-
-        if rendered_segments.len() == 1 {
-            return rendered_segments[0].clone();
         }
 
         let mut result = rendered_segments[0].clone();
@@ -397,6 +446,14 @@ impl StatusLineGenerator {
 
             result.push_str(&arrow);
             result.push_str(&rendered_segments[i]);
+        }
+
+        // Closing arrow so the last capsule tapers instead of ending square.
+        if let Some(last_bg) = segment_configs
+            .last()
+            .and_then(|(config, _)| config.colors.background.as_ref())
+        {
+            result.push_str(&self.create_powerline_arrow(Some(last_bg), None));
         }
 
         // Reset colors at the end
@@ -508,6 +565,10 @@ pub fn collect_all_segments(
             }
             crate::config::SegmentId::Update => {
                 let segment = UpdateSegment::new();
+                segment.collect(input)
+            }
+            crate::config::SegmentId::Time => {
+                let segment = TimeSegment::new();
                 segment.collect(input)
             }
         };

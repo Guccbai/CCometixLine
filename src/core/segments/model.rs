@@ -17,8 +17,15 @@ impl Segment for ModelSegment {
         metadata.insert("model_id".to_string(), input.model.id.clone());
         metadata.insert("display_name".to_string(), input.model.display_name.clone());
 
+        let mut primary = self.format_model_name(&input.model.id, &input.model.display_name);
+        // Reasoning effort right after the name, dimmed so the name stays primary.
+        if let Some(effort) = &input.effort {
+            primary.push_str(&format!(" \x1b[90m{}\x1b[0m", effort.level));
+            metadata.insert("effort".to_string(), effort.level.clone());
+        }
+
         Some(SegmentData {
-            primary: self.format_model_name(&input.model.id, &input.model.display_name),
+            primary,
             secondary: String::new(),
             metadata,
         })

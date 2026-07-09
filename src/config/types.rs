@@ -32,6 +32,7 @@ pub struct SegmentConfig {
     pub icon: IconConfig,
     pub colors: ColorConfig,
     pub styles: TextStyleConfig,
+    #[serde(default)]
     pub options: HashMap<String, serde_json::Value>,
 }
 
@@ -73,6 +74,7 @@ pub enum SegmentId {
     Session,
     OutputStyle,
     Update,
+    Time,
 }
 
 // Legacy compatibility structure
@@ -110,6 +112,32 @@ pub struct OutputStyle {
     pub name: String,
 }
 
+/// Reasoning effort from stdin (low/medium/high/xhigh/max). Absent when the
+/// model doesn't support the effort parameter.
+#[derive(Deserialize)]
+pub struct Effort {
+    pub level: String,
+}
+
+// Rate limit windows Claude Code >= 2.1.80 passes on stdin (Pro/Max only;
+// absent before the session's first API response, each window independently).
+#[derive(Deserialize)]
+pub struct RateLimitWindow {
+    pub used_percentage: Option<f64>,
+    /// Unix epoch seconds when the window resets.
+    pub resets_at: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct RateLimits {
+    pub five_hour: Option<RateLimitWindow>,
+    pub seven_day: Option<RateLimitWindow>,
+    /// 7d Fable-only window. Not sent as of Claude Code 2.1.204; named after
+    /// the seven_day_opus/seven_day_sonnet precedent so it lights up when
+    /// Claude Code starts exposing it.
+    pub seven_day_fable: Option<RateLimitWindow>,
+}
+
 #[derive(Deserialize)]
 pub struct InputData {
     pub model: Model,
@@ -117,6 +145,8 @@ pub struct InputData {
     pub transcript_path: String,
     pub cost: Option<Cost>,
     pub output_style: Option<OutputStyle>,
+    pub rate_limits: Option<RateLimits>,
+    pub effort: Option<Effort>,
 }
 
 // OpenAI-style nested token details

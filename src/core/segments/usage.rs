@@ -1,5 +1,5 @@
 use super::{progress_bar, Segment, SegmentData};
-use crate::config::{InputData, SegmentId};
+use crate::config::{InputData, RateLimits, SegmentId};
 use crate::utils::credentials;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,16 @@ struct ApiUsageCache {
     cached_at: String,
 }
 
+/// Normalized usage windows from either data source (stdin or API).
+struct UsageData {
+    five_hour_util: f64,
+    five_hour_reset: Option<String>,
+    seven_day_util: f64,
+    seven_day_reset: Option<String>,
+    /// 7d Fable-only window; None until the data source provides it.
+    seven_day_fable: Option<(f64, Option<String>)>,
+}
+
 #[derive(Default)]
 pub struct UsageSegment;
 
@@ -53,30 +63,70 @@ impl UsageSegment {
         }
     }
 
-    /// Time until the window resets, as a compact relative string (e.g. "2d6h", "5h30m", "45m").
-    fn format_reset_relative(reset_time_str: Option<&str>) -> String {
+    /// Unix epoch seconds (stdin `resets_at`) → RFC3339, so both data sources
+    /// feed the same rendering path.
+    fn epoch_to_rfc3339(epoch: i64) -> Option<String> {
+        DateTime::<Utc>::from_timestamp(epoch, 0).map(|dt| dt.to_rfc3339())
+    }
+
+    /// Absolute local reset time: "周二 21:08" for the 5h window,
+    /// "07/12 周六 18:00" (with date) for the 7d windows.
+    fn format_reset_absolute(reset_time_str: Option<&str>, with_date: bool) -> String {
         if let Some(time_str) = reset_time_str {
             if let Ok(dt) = DateTime::parse_from_rfc3339(time_str) {
-                let secs = dt
-                    .with_timezone(&Utc)
-                    .signed_duration_since(Utc::now())
-                    .num_seconds();
-                if secs <= 0 {
-                    return "now".to_string();
-                }
-                let days = secs / 86_400;
-                let hours = (secs % 86_400) / 3_600;
-                let mins = (secs % 3_600) / 60;
-                return if days > 0 {
-                    format!("{days}d{hours}h")
-                } else if hours > 0 {
-                    format!("{hours}h{mins}m")
+                let local = dt.with_timezone(&chrono::Local);
+                let weekday = super::weekday_zh(chrono::Datelike::weekday(&local));
+                return if with_date {
+                    format!(
+                        "{} {} {}",
+                        local.format("%m/%d"),
+                        weekday,
+                        local.format("%H:%M")
+                    )
                 } else {
-                    format!("{mins}m")
+                    format!("{} {}", weekday, local.format("%H:%M"))
                 };
             }
         }
         "?".to_string()
+    }
+
+    /// Usage data from Claude Code's stdin JSON (>= 2.1.80): real-time, zero
+    /// network. Also refreshes the on-disk cache so a new session's first
+    /// renders (before rate_limits appears) don't fall back to the API.
+    fn collect_from_stdin(&self, limits: &RateLimits) -> UsageData {
+        let window = |w: &crate::config::RateLimitWindow| {
+            (
+                w.used_percentage.unwrap_or(0.0),
+                w.resets_at.and_then(Self::epoch_to_rfc3339),
+            )
+        };
+        let (five_util, five_reset) = limits.five_hour.as_ref().map(window).unwrap_or((0.0, None));
+        let (seven_util, seven_reset) =
+            limits.seven_day.as_ref().map(window).unwrap_or((0.0, None));
+        let seven_day_fable = limits.seven_day_fable.as_ref().map(window);
+
+        let cache_fresh = self
+            .load_cache()
+            .map(|c| self.is_cache_valid(&c, 60))
+            .unwrap_or(false);
+        if !cache_fresh {
+            self.save_cache(&ApiUsageCache {
+                five_hour_utilization: five_util,
+                five_hour_resets_at: five_reset.clone(),
+                seven_day_utilization: seven_util,
+                resets_at: seven_reset.clone(),
+                cached_at: Utc::now().to_rfc3339(),
+            });
+        }
+
+        UsageData {
+            five_hour_util: five_util,
+            five_hour_reset: five_reset,
+            seven_day_util: seven_util,
+            seven_day_reset: seven_reset,
+            seven_day_fable,
+        }
     }
 
     fn get_cache_path() -> Option<std::path::PathBuf> {
@@ -194,8 +244,11 @@ impl UsageSegment {
     }
 }
 
-impl Segment for UsageSegment {
-    fn collect(&self, _input: &InputData) -> Option<SegmentData> {
+impl UsageSegment {
+    /// Fallback for Claude Code versions without stdin rate_limits: cached
+    /// /api/oauth/usage polling. That endpoint aggressively rate limits
+    /// (429s persisting for hours), hence the failure backoff below.
+    fn fetch_with_cache(&self) -> Option<UsageData> {
         let token = credentials::get_oauth_token()?;
 
         // Load config from file to get segment options
@@ -223,57 +276,88 @@ impl Segment for UsageSegment {
             .map(|cache| self.is_cache_valid(cache, cache_duration))
             .unwrap_or(false);
 
-        // Each tuple element: 5h util, 5h reset time, 7d-all util, 7d reset time.
-        let from_cache = |c: ApiUsageCache| {
-            (
-                c.five_hour_utilization,
-                c.five_hour_resets_at,
-                c.seven_day_utilization,
-                c.resets_at,
-            )
+        let from_cache = |c: ApiUsageCache| UsageData {
+            five_hour_util: c.five_hour_utilization,
+            five_hour_reset: c.five_hour_resets_at,
+            seven_day_util: c.seven_day_utilization,
+            seven_day_reset: c.resets_at,
+            seven_day_fable: None,
         };
 
-        let (five_hour_util, five_hour_reset, seven_day_util, seven_day_reset) = if use_cached {
-            from_cache(cached_data.unwrap())
-        } else {
-            match self.fetch_api_usage(api_base_url, &token, timeout) {
-                Some(response) => {
-                    let cache = ApiUsageCache {
-                        five_hour_utilization: response.five_hour.utilization,
-                        five_hour_resets_at: response.five_hour.resets_at.clone(),
-                        seven_day_utilization: response.seven_day.utilization,
-                        resets_at: response.seven_day.resets_at.clone(),
-                        cached_at: Utc::now().to_rfc3339(),
-                    };
-                    self.save_cache(&cache);
-                    (
-                        response.five_hour.utilization,
-                        response.five_hour.resets_at,
-                        response.seven_day.utilization,
-                        response.seven_day.resets_at,
-                    )
-                }
-                None => match cached_data {
-                    Some(cache) => from_cache(cache),
-                    None => return None,
-                },
+        if use_cached {
+            return Some(from_cache(cached_data.unwrap()));
+        }
+        match self.fetch_api_usage(api_base_url, &token, timeout) {
+            Some(response) => {
+                let cache = ApiUsageCache {
+                    five_hour_utilization: response.five_hour.utilization,
+                    five_hour_resets_at: response.five_hour.resets_at.clone(),
+                    seven_day_utilization: response.seven_day.utilization,
+                    resets_at: response.seven_day.resets_at.clone(),
+                    cached_at: Utc::now().to_rfc3339(),
+                };
+                self.save_cache(&cache);
+                Some(UsageData {
+                    five_hour_util: response.five_hour.utilization,
+                    five_hour_reset: response.five_hour.resets_at,
+                    seven_day_util: response.seven_day.utilization,
+                    seven_day_reset: response.seven_day.resets_at,
+                    seven_day_fable: None,
+                })
             }
+            None => match cached_data {
+                Some(mut cache) => {
+                    // Failed fetch (e.g. 429): refresh cached_at so the next
+                    // cache_duration renders from cache instead of hitting the
+                    // endpoint on every statusline refresh, which compounds
+                    // the rate limit.
+                    cache.cached_at = Utc::now().to_rfc3339();
+                    self.save_cache(&cache);
+                    Some(from_cache(cache))
+                }
+                None => None,
+            },
+        }
+    }
+}
+
+impl Segment for UsageSegment {
+    fn collect(&self, input: &InputData) -> Option<SegmentData> {
+        // Prefer rate_limits from stdin (Claude Code >= 2.1.80); the API
+        // path only serves older versions and early-session renders.
+        let data = match &input.rate_limits {
+            Some(limits) => self.collect_from_stdin(limits),
+            None => self.fetch_with_cache()?,
         };
 
         // Icon reflects the highest-watermark window; color stays fixed (config).
-        let max_util = five_hour_util.max(seven_day_util);
+        let fable_util = data.seven_day_fable.as_ref().map(|(u, _)| *u);
+        let max_util = data
+            .five_hour_util
+            .max(data.seven_day_util)
+            .max(fable_util.unwrap_or(0.0));
         let dynamic_icon = Self::get_circle_icon(max_util / 100.0);
 
-        // Each window: bar + percentage + relative reset countdown.
-        let five_bar = progress_bar(five_hour_util, 5);
-        let seven_bar = progress_bar(seven_day_util, 5);
-        let primary = format!(
-            "5h {five_bar} {}% {}  7d {seven_bar} {}% {}",
-            five_hour_util.round() as u8,
-            Self::format_reset_relative(five_hour_reset.as_deref()),
-            seven_day_util.round() as u8,
-            Self::format_reset_relative(seven_day_reset.as_deref()),
+        // Each window: bar + percentage + relative reset countdown. Windows
+        // get distinct embedded colors (5h cyan, 7d magenta, fable blue) so
+        // they read apart at a glance.
+        let five_bar = progress_bar(data.five_hour_util, 5);
+        let seven_bar = progress_bar(data.seven_day_util, 5);
+        let mut primary = format!(
+            "\x1b[96m5h {five_bar} {}% {}\x1b[0m\x1b[90m · \x1b[0m\x1b[95m7d {seven_bar} {}% {}\x1b[0m",
+            data.five_hour_util.round() as u8,
+            Self::format_reset_absolute(data.five_hour_reset.as_deref(), false),
+            data.seven_day_util.round() as u8,
+            Self::format_reset_absolute(data.seven_day_reset.as_deref(), true),
         );
+        if let Some((util, reset)) = &data.seven_day_fable {
+            let bar = progress_bar(*util, 5);
+            primary.push_str(&format!(
+                "\x1b[90m · \x1b[0m\x1b[94mfable {bar} {}% {}\x1b[0m",
+                util.round() as u8,
+                Self::format_reset_absolute(reset.as_deref(), true),
+            ));
+        }
 
         let mut metadata = HashMap::new();
         metadata.insert("dynamic_icon".to_string(), dynamic_icon);
