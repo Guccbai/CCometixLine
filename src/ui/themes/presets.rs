@@ -146,15 +146,16 @@ impl ThemePresets {
         Config {
             style: StyleConfig {
                 mode: StyleMode::NerdFont,
-                separator: " | ".to_string(),
+                separator: " · ".to_string(),
             },
             segments: vec![
                 theme_default::model_segment(),
                 theme_default::directory_segment(),
                 theme_default::git_segment(),
                 theme_default::context_window_segment(),
-                theme_default::usage_segment(),
                 theme_default::cost_segment(),
+                theme_default::time_segment(),
+                theme_default::usage_segment(),
                 theme_default::session_segment(),
                 theme_default::output_style_segment(),
             ],

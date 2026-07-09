@@ -8,12 +8,12 @@ pub fn model_segment() -> SegmentConfig {
         id: SegmentId::Model,
         enabled: true,
         icon: IconConfig {
-            plain: "🤖".to_string(),
-            nerd_font: "\u{e26d}".to_string(),
+            plain: "model".to_string(),
+            nerd_font: "model".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 14 }), // Cyan
-            text: Some(AnsiColor::Color16 { c16: 14 }),
+            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
+            text: Some(AnsiColor::Color16 { c16: 14 }), // Cyan
             background: None,
         },
         styles: TextStyleConfig::default(),
@@ -26,11 +26,11 @@ pub fn directory_segment() -> SegmentConfig {
         id: SegmentId::Directory,
         enabled: true,
         icon: IconConfig {
-            plain: "📁".to_string(),
-            nerd_font: "\u{f024b}".to_string(),
+            plain: "dir".to_string(),
+            nerd_font: "dir".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 11 }), // Yellow
+            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
             text: Some(AnsiColor::Color16 { c16: 10 }), // Green
             background: None,
         },
@@ -44,12 +44,12 @@ pub fn git_segment() -> SegmentConfig {
         id: SegmentId::Git,
         enabled: true,
         icon: IconConfig {
-            plain: "🌿".to_string(),
-            nerd_font: "\u{f02a2}".to_string(),
+            plain: "git".to_string(),
+            nerd_font: "git".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 12 }), // Blue
-            text: Some(AnsiColor::Color16 { c16: 12 }),
+            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
+            text: Some(AnsiColor::Color16 { c16: 12 }), // Blue
             background: None,
         },
         styles: TextStyleConfig::default(),
@@ -66,12 +66,12 @@ pub fn context_window_segment() -> SegmentConfig {
         id: SegmentId::ContextWindow,
         enabled: true,
         icon: IconConfig {
-            plain: "⚡️".to_string(),
-            nerd_font: "\u{f49b}".to_string(),
+            plain: "ctx".to_string(),
+            nerd_font: "ctx".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 13 }), // Magenta
-            text: Some(AnsiColor::Color16 { c16: 13 }),
+            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
+            text: Some(AnsiColor::Color16 { c16: 13 }), // Magenta
             background: None,
         },
         styles: TextStyleConfig::default(),
@@ -82,14 +82,15 @@ pub fn context_window_segment() -> SegmentConfig {
 pub fn usage_segment() -> SegmentConfig {
     SegmentConfig {
         id: SegmentId::Usage,
-        enabled: false,
+        enabled: true,
+        // Empty icon: the segment embeds its own per-window colors/labels.
         icon: IconConfig {
-            plain: "📊".to_string(),
-            nerd_font: "\u{f0a9e}".to_string(), // circle_slice_1
+            plain: "".to_string(),
+            nerd_font: "".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 14 }), // Cyan
-            text: Some(AnsiColor::Color16 { c16: 14 }),
+            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
+            text: Some(AnsiColor::Color16 { c16: 14 }), // Cyan
             background: None,
         },
         styles: TextStyleConfig::default(),
@@ -104,6 +105,7 @@ pub fn usage_segment() -> SegmentConfig {
                 serde_json::Value::Number(180.into()),
             );
             opts.insert("timeout".to_string(), serde_json::Value::Number(2.into()));
+            opts.insert("line".to_string(), serde_json::Value::Number(1.into()));
             opts
         },
     }
@@ -112,18 +114,41 @@ pub fn usage_segment() -> SegmentConfig {
 pub fn cost_segment() -> SegmentConfig {
     SegmentConfig {
         id: SegmentId::Cost,
-        enabled: false,
+        enabled: true,
         icon: IconConfig {
-            plain: "💰".to_string(),
-            nerd_font: "\u{eec1}".to_string(),
+            plain: "cost".to_string(),
+            nerd_font: "cost".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 3 }), // Yellow
-            text: Some(AnsiColor::Color16 { c16: 3 }),
+            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
+            text: Some(AnsiColor::Color16 { c16: 10 }), // Green
             background: None,
         },
         styles: TextStyleConfig::default(),
         options: HashMap::new(),
+    }
+}
+
+pub fn time_segment() -> SegmentConfig {
+    SegmentConfig {
+        id: SegmentId::Time,
+        enabled: true,
+        // Empty icon: the time text stands alone on the second row.
+        icon: IconConfig {
+            plain: "".to_string(),
+            nerd_font: "".to_string(),
+        },
+        colors: ColorConfig {
+            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
+            text: Some(AnsiColor::Color16 { c16: 11 }), // Yellow
+            background: None,
+        },
+        styles: TextStyleConfig::default(),
+        options: {
+            let mut opts = HashMap::new();
+            opts.insert("line".to_string(), serde_json::Value::Number(1.into()));
+            opts
+        },
     }
 }
 
