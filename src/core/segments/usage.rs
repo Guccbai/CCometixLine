@@ -1,4 +1,4 @@
-use super::{progress_bar, Segment, SegmentData};
+use super::{circle_gauge, Segment, SegmentData};
 use crate::config::{InputData, RateLimits, SegmentId};
 use crate::utils::credentials;
 use chrono::{DateTime, Utc};
@@ -31,14 +31,17 @@ struct ApiUsageCache {
     cached_at: String,
 }
 
+/// One usage window: (utilization 0-100, reset time RFC3339).
+type UsageWindow = (f64, Option<String>);
+
 /// Normalized usage windows from either data source (stdin or API).
+/// A `None` window means the source didn't provide it (rendered as "-"),
+/// which is distinct from a freshly-reset 0% window.
 struct UsageData {
-    five_hour_util: f64,
-    five_hour_reset: Option<String>,
-    seven_day_util: f64,
-    seven_day_reset: Option<String>,
-    /// 7d Fable-only window; None until the data source provides it.
-    seven_day_fable: Option<(f64, Option<String>)>,
+    five_hour: Option<UsageWindow>,
+    seven_day: Option<UsageWindow>,
+    /// 7d Fable-only window; only rendered when the data source provides it.
+    seven_day_fable: Option<UsageWindow>,
 }
 
 #[derive(Default)]
@@ -49,46 +52,56 @@ impl UsageSegment {
         Self
     }
 
-    fn get_circle_icon(utilization: f64) -> String {
-        let percent = (utilization * 100.0) as u8;
-        match percent {
-            0..=12 => "\u{f0a9e}".to_string(),  // circle_slice_1
-            13..=25 => "\u{f0a9f}".to_string(), // circle_slice_2
-            26..=37 => "\u{f0aa0}".to_string(), // circle_slice_3
-            38..=50 => "\u{f0aa1}".to_string(), // circle_slice_4
-            51..=62 => "\u{f0aa2}".to_string(), // circle_slice_5
-            63..=75 => "\u{f0aa3}".to_string(), // circle_slice_6
-            76..=87 => "\u{f0aa4}".to_string(), // circle_slice_7
-            _ => "\u{f0aa5}".to_string(),       // circle_slice_8
-        }
-    }
-
     /// Unix epoch seconds (stdin `resets_at`) → RFC3339, so both data sources
     /// feed the same rendering path.
     fn epoch_to_rfc3339(epoch: i64) -> Option<String> {
         DateTime::<Utc>::from_timestamp(epoch, 0).map(|dt| dt.to_rfc3339())
     }
 
-    /// Absolute local reset time: "周二 21:08" for the 5h window,
-    /// "07/12 周六 18:00" (with date) for the 7d windows.
-    fn format_reset_absolute(reset_time_str: Option<&str>, with_date: bool) -> String {
-        if let Some(time_str) = reset_time_str {
-            if let Ok(dt) = DateTime::parse_from_rfc3339(time_str) {
-                let local = dt.with_timezone(&chrono::Local);
-                let weekday = super::weekday_zh(chrono::Datelike::weekday(&local));
-                return if with_date {
-                    format!(
-                        "{} {} {}",
-                        local.format("%m/%d"),
-                        weekday,
-                        local.format("%H:%M")
-                    )
-                } else {
-                    format!("{} {}", weekday, local.format("%H:%M"))
-                };
-            }
+    /// State color by utilization, same thresholds as the ctx segment:
+    /// <70% calm sage green, 70-85% amber, ≥85% soft red.
+    fn util_color(util: f64) -> &'static str {
+        if util >= 85.0 {
+            "\x1b[38;5;167m" // soft red
+        } else if util >= 70.0 {
+            "\x1b[38;5;179m" // amber
+        } else {
+            "\x1b[38;5;108m" // sage green
         }
-        "?".to_string()
+    }
+
+    /// Humanized reset info: ("4h12m", "04:49")-style (countdown, absolute)
+    /// pair. Countdown scales with the horizon: "38m" / "4h12m" / "3d15h".
+    /// The absolute part carries a relative day word only when the horizon
+    /// needs one: the 5h window shows bare "04:49" (unambiguous within 5h),
+    /// the 7d windows "明天 18:00" / "周六 18:00" / "07/12 周六 18:00".
+    fn format_reset(reset_time_str: Option<&str>, with_day_word: bool) -> Option<(String, String)> {
+        let dt = DateTime::parse_from_rfc3339(reset_time_str?).ok()?;
+        let local = dt.with_timezone(&chrono::Local);
+        let now = chrono::Local::now();
+        let mins = (local - now).num_minutes().max(0);
+        let (d, h, m) = (mins / 1440, (mins % 1440) / 60, mins % 60);
+        let countdown = if d > 0 {
+            format!("{d}d{h}h")
+        } else if h > 0 {
+            format!("{h}h{m:02}m")
+        } else {
+            format!("{m}m")
+        };
+        let hm = local.format("%H:%M");
+        let absolute = if !with_day_word {
+            hm.to_string()
+        } else {
+            let days = (local.date_naive() - now.date_naive()).num_days();
+            let weekday = super::weekday_zh(chrono::Datelike::weekday(&local));
+            match days {
+                0 => format!("今天 {hm}"),
+                1 => format!("明天 {hm}"),
+                2..=6 => format!("{weekday} {hm}"),
+                _ => format!("{} {weekday} {hm}", local.format("%m/%d")),
+            }
+        };
+        Some((countdown, absolute))
     }
 
     /// Usage data from Claude Code's stdin JSON (>= 2.1.80): real-time, zero
@@ -101,9 +114,8 @@ impl UsageSegment {
                 w.resets_at.and_then(Self::epoch_to_rfc3339),
             )
         };
-        let (five_util, five_reset) = limits.five_hour.as_ref().map(window).unwrap_or((0.0, None));
-        let (seven_util, seven_reset) =
-            limits.seven_day.as_ref().map(window).unwrap_or((0.0, None));
+        let five_hour = limits.five_hour.as_ref().map(window);
+        let seven_day = limits.seven_day.as_ref().map(window);
         let seven_day_fable = limits.seven_day_fable.as_ref().map(window);
 
         let cache_fresh = self
@@ -112,19 +124,17 @@ impl UsageSegment {
             .unwrap_or(false);
         if !cache_fresh {
             self.save_cache(&ApiUsageCache {
-                five_hour_utilization: five_util,
-                five_hour_resets_at: five_reset.clone(),
-                seven_day_utilization: seven_util,
-                resets_at: seven_reset.clone(),
+                five_hour_utilization: five_hour.as_ref().map(|(u, _)| *u).unwrap_or(0.0),
+                five_hour_resets_at: five_hour.as_ref().and_then(|(_, r)| r.clone()),
+                seven_day_utilization: seven_day.as_ref().map(|(u, _)| *u).unwrap_or(0.0),
+                resets_at: seven_day.as_ref().and_then(|(_, r)| r.clone()),
                 cached_at: Utc::now().to_rfc3339(),
             });
         }
 
         UsageData {
-            five_hour_util: five_util,
-            five_hour_reset: five_reset,
-            seven_day_util: seven_util,
-            seven_day_reset: seven_reset,
+            five_hour,
+            seven_day,
             seven_day_fable,
         }
     }
@@ -277,10 +287,8 @@ impl UsageSegment {
             .unwrap_or(false);
 
         let from_cache = |c: ApiUsageCache| UsageData {
-            five_hour_util: c.five_hour_utilization,
-            five_hour_reset: c.five_hour_resets_at,
-            seven_day_util: c.seven_day_utilization,
-            seven_day_reset: c.resets_at,
+            five_hour: Some((c.five_hour_utilization, c.five_hour_resets_at)),
+            seven_day: Some((c.seven_day_utilization, c.resets_at)),
             seven_day_fable: None,
         };
 
@@ -298,10 +306,8 @@ impl UsageSegment {
                 };
                 self.save_cache(&cache);
                 Some(UsageData {
-                    five_hour_util: response.five_hour.utilization,
-                    five_hour_reset: response.five_hour.resets_at,
-                    seven_day_util: response.seven_day.utilization,
-                    seven_day_reset: response.seven_day.resets_at,
+                    five_hour: Some((response.five_hour.utilization, response.five_hour.resets_at)),
+                    seven_day: Some((response.seven_day.utilization, response.seven_day.resets_at)),
                     seven_day_fable: None,
                 })
             }
@@ -331,31 +337,42 @@ impl Segment for UsageSegment {
         };
 
         // Icon reflects the highest-watermark window; color stays fixed (config).
-        let fable_util = data.seven_day_fable.as_ref().map(|(u, _)| *u);
-        let max_util = data
-            .five_hour_util
-            .max(data.seven_day_util)
-            .max(fable_util.unwrap_or(0.0));
-        let dynamic_icon = Self::get_circle_icon(max_util / 100.0);
+        let max_util = [&data.five_hour, &data.seven_day, &data.seven_day_fable]
+            .iter()
+            .filter_map(|w| w.as_ref().map(|(u, _)| *u))
+            .fold(0.0f64, f64::max);
+        let dynamic_icon = circle_gauge(max_util).to_string();
 
-        // Each window: bar + percentage + relative reset countdown. Windows
-        // get distinct embedded colors (5h cyan, 7d magenta, fable blue) so
-        // they read apart at a glance.
-        let five_bar = progress_bar(data.five_hour_util, 5);
-        let seven_bar = progress_bar(data.seven_day_util, 5);
+        // Each window: dim label, gauge + percentage in its state color
+        // (utilization thresholds, not per-window decoration), then the
+        // countdown as a primary value with the absolute reset time in
+        // parentheses as secondary; "-" when the data source omits the
+        // window (distinct from a real 0%).
+        let window_text = |label: &str, w: &Option<UsageWindow>, with_day_word: bool| match w {
+            Some((util, reset)) => {
+                let reset_part = Self::format_reset(reset.as_deref(), with_day_word)
+                    .map(|(cd, abs)| {
+                        format!("\x1b[38;5;252m{cd}\x1b[0m \x1b[38;5;245m({abs})\x1b[0m")
+                    })
+                    .unwrap_or_else(|| "\x1b[38;5;245m?\x1b[0m".to_string());
+                format!(
+                    "\x1b[38;5;245m{label} {}{} {}%\x1b[0m {reset_part}",
+                    Self::util_color(*util),
+                    circle_gauge(*util),
+                    util.round() as u8,
+                )
+            }
+            None => format!("\x1b[38;5;245m{label} -\x1b[0m"),
+        };
         let mut primary = format!(
-            "\x1b[96m5h {five_bar} {}% {}\x1b[0m\x1b[90m · \x1b[0m\x1b[95m7d {seven_bar} {}% {}\x1b[0m",
-            data.five_hour_util.round() as u8,
-            Self::format_reset_absolute(data.five_hour_reset.as_deref(), false),
-            data.seven_day_util.round() as u8,
-            Self::format_reset_absolute(data.seven_day_reset.as_deref(), true),
+            "{}\x1b[90m · \x1b[0m{}",
+            window_text("5h", &data.five_hour, false),
+            window_text("7d", &data.seven_day, true),
         );
-        if let Some((util, reset)) = &data.seven_day_fable {
-            let bar = progress_bar(*util, 5);
+        if data.seven_day_fable.is_some() {
             primary.push_str(&format!(
-                "\x1b[90m · \x1b[0m\x1b[94mfable {bar} {}% {}\x1b[0m",
-                util.round() as u8,
-                Self::format_reset_absolute(reset.as_deref(), true),
+                "\x1b[90m · \x1b[0m{}",
+                window_text("fable", &data.seven_day_fable, true),
             ));
         }
 

@@ -50,14 +50,18 @@ pub fn weekday_zh(weekday: chrono::Weekday) -> &'static str {
     }
 }
 
-/// Render a fixed-width block-character progress bar, e.g. "[██████░░░░]".
-/// `percent` is 0-100; out-of-range values are clamped.
-pub fn progress_bar(percent: f64, width: usize) -> String {
-    let ratio = (percent / 100.0).clamp(0.0, 1.0);
-    let filled = ((ratio * width as f64).round() as usize).min(width);
-    format!(
-        "[{}{}]",
-        "\u{2588}".repeat(filled),         // █ full block
-        "\u{2591}".repeat(width - filled)  // ░ light shade
-    )
+/// Nerd Font circle_slice glyph for a 0-100 percentage: an 8-step pie gauge
+/// in a single fixed-width (PUA, unambiguous) character. Coarse by design —
+/// the exact value is always rendered as a number next to it.
+pub fn circle_gauge(percent: f64) -> &'static str {
+    match percent.clamp(0.0, 100.0) as u8 {
+        0..=12 => "\u{f0a9e}",  // circle_slice_1
+        13..=25 => "\u{f0a9f}", // circle_slice_2
+        26..=37 => "\u{f0aa0}", // circle_slice_3
+        38..=50 => "\u{f0aa1}", // circle_slice_4
+        51..=62 => "\u{f0aa2}", // circle_slice_5
+        63..=75 => "\u{f0aa3}", // circle_slice_6
+        76..=87 => "\u{f0aa4}", // circle_slice_7
+        _ => "\u{f0aa5}",       // circle_slice_8
+    }
 }

@@ -1,4 +1,4 @@
-use super::{progress_bar, Segment, SegmentData};
+use super::{circle_gauge, Segment, SegmentData};
 use crate::config::{InputData, ModelConfig, SegmentId, TranscriptEntry};
 use std::collections::HashMap;
 use std::fs;
@@ -48,11 +48,11 @@ impl Segment for ContextWindowSegment {
             None => "-".to_string(),
         };
 
-        // Bar (5-wide, matching usage) + percentage + token count, e.g. "[█░░░░] 62.3% 124.5k".
+        // Pie gauge (matching usage) + percentage + token count, e.g. "◑ 62.3% 124.5k".
         let primary = match (rate_opt, context_used_token_opt) {
             (Some(r), Some(t)) => format!(
                 "{} {percentage_display} {}",
-                progress_bar(r, 5),
+                circle_gauge(r),
                 Self::format_token_count(t)
             ),
             _ => "-".to_string(),

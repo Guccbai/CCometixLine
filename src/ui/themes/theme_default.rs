@@ -12,8 +12,8 @@ pub fn model_segment() -> SegmentConfig {
             nerd_font: "model".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
-            text: Some(AnsiColor::Color16 { c16: 14 }), // Cyan
+            icon: Some(AnsiColor::Color256 { c256: 245 }), // dim gray (muted label)
+            text: Some(AnsiColor::Color256 { c256: 110 }), // soft steel blue (brand anchor)
             background: None,
         },
         styles: TextStyleConfig::default(),
@@ -30,8 +30,8 @@ pub fn directory_segment() -> SegmentConfig {
             nerd_font: "dir".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
-            text: Some(AnsiColor::Color16 { c16: 10 }), // Green
+            icon: Some(AnsiColor::Color256 { c256: 245 }), // dim gray (muted label)
+            text: Some(AnsiColor::Color256 { c256: 252 }), // neutral light
             background: None,
         },
         styles: TextStyleConfig::default(),
@@ -48,8 +48,8 @@ pub fn git_segment() -> SegmentConfig {
             nerd_font: "git".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
-            text: Some(AnsiColor::Color16 { c16: 12 }), // Blue
+            icon: Some(AnsiColor::Color256 { c256: 245 }), // dim gray (muted label)
+            text: Some(AnsiColor::Color256 { c256: 109 }), // soft teal
             background: None,
         },
         styles: TextStyleConfig::default(),
@@ -70,8 +70,8 @@ pub fn context_window_segment() -> SegmentConfig {
             nerd_font: "ctx".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
-            text: Some(AnsiColor::Color16 { c16: 13 }), // Magenta
+            icon: Some(AnsiColor::Color256 { c256: 245 }), // dim gray (muted label)
+            text: Some(AnsiColor::Color256 { c256: 252 }), // neutral light (threshold color overrides)
             background: None,
         },
         styles: TextStyleConfig::default(),
@@ -89,8 +89,8 @@ pub fn usage_segment() -> SegmentConfig {
             nerd_font: "".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
-            text: Some(AnsiColor::Color16 { c16: 14 }), // Cyan
+            icon: Some(AnsiColor::Color256 { c256: 245 }), // dim gray (muted label)
+            text: Some(AnsiColor::Color256 { c256: 252 }), // neutral light (windows embed own colors)
             background: None,
         },
         styles: TextStyleConfig::default(),
@@ -120,8 +120,8 @@ pub fn cost_segment() -> SegmentConfig {
             nerd_font: "cost".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
-            text: Some(AnsiColor::Color16 { c16: 10 }), // Green
+            icon: Some(AnsiColor::Color256 { c256: 245 }), // dim gray (muted label)
+            text: Some(AnsiColor::Color256 { c256: 180 }), // soft tan (money)
             background: None,
         },
         styles: TextStyleConfig::default(),
@@ -139,8 +139,8 @@ pub fn time_segment() -> SegmentConfig {
             nerd_font: "".to_string(),
         },
         colors: ColorConfig {
-            icon: Some(AnsiColor::Color16 { c16: 8 }), // Bright black (muted label)
-            text: Some(AnsiColor::Color16 { c16: 11 }), // Yellow
+            icon: Some(AnsiColor::Color256 { c256: 245 }), // dim gray (muted label)
+            text: Some(AnsiColor::Color256 { c256: 250 }), // ambient light gray
             background: None,
         },
         styles: TextStyleConfig::default(),
