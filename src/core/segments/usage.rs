@@ -1,4 +1,4 @@
-use super::{circle_gauge, Segment, SegmentData};
+use super::{circle_gauge, util_color_256, Segment, SegmentData};
 use crate::config::{InputData, RateLimits, SegmentId};
 use crate::utils::credentials;
 use chrono::{DateTime, Utc};
@@ -20,19 +20,30 @@ struct UsagePeriod {
     resets_at: Option<String>,
 }
 
+// Utilizations are Option so a window the data source omitted survives a
+// cache round trip as "absent" instead of resurfacing as a fake 0%.
 #[derive(Debug, Serialize, Deserialize)]
 struct ApiUsageCache {
-    five_hour_utilization: f64,
+    five_hour_utilization: Option<f64>,
     #[serde(default)]
     five_hour_resets_at: Option<String>,
-    seven_day_utilization: f64,
+    seven_day_utilization: Option<f64>,
     // Legacy field (7d reset time) kept for backward compatibility with old caches.
     resets_at: Option<String>,
     cached_at: String,
 }
 
-/// One usage window: (utilization 0-100, reset time RFC3339).
-type UsageWindow = (f64, Option<String>);
+/// One usage window: utilization (0-100) and reset time (RFC3339).
+struct UsageWindow {
+    util: f64,
+    reset: Option<String>,
+}
+
+// Embedded window tones: dim gray labels (matching theme_default's muted
+// labels) and neutral light values.
+const DIM: &str = "\x1b[38;5;245m";
+const LIGHT: &str = "\x1b[38;5;252m";
+const RESET: &str = "\x1b[0m";
 
 /// Normalized usage windows from either data source (stdin or API).
 /// A `None` window means the source didn't provide it (rendered as "-"),
@@ -58,27 +69,18 @@ impl UsageSegment {
         DateTime::<Utc>::from_timestamp(epoch, 0).map(|dt| dt.to_rfc3339())
     }
 
-    /// State color by utilization, same thresholds as the ctx segment:
-    /// <70% calm sage green, 70-85% amber, ≥85% soft red.
-    fn util_color(util: f64) -> &'static str {
-        if util >= 85.0 {
-            "\x1b[38;5;167m" // soft red
-        } else if util >= 70.0 {
-            "\x1b[38;5;179m" // amber
-        } else {
-            "\x1b[38;5;108m" // sage green
-        }
-    }
-
     /// Humanized reset info: ("4h12m", "04:49")-style (countdown, absolute)
     /// pair. Countdown scales with the horizon: "38m" / "4h12m" / "3d15h".
     /// The absolute part carries a relative day word only when the horizon
     /// needs one: the 5h window shows bare "04:49" (unambiguous within 5h),
     /// the 7d windows "明天 18:00" / "周六 18:00" / "07/12 周六 18:00".
-    fn format_reset(reset_time_str: Option<&str>, with_day_word: bool) -> Option<(String, String)> {
+    fn format_reset(
+        reset_time_str: Option<&str>,
+        with_day_word: bool,
+        now: DateTime<chrono::Local>,
+    ) -> Option<(String, String)> {
         let dt = DateTime::parse_from_rfc3339(reset_time_str?).ok()?;
         let local = dt.with_timezone(&chrono::Local);
-        let now = chrono::Local::now();
         let mins = (local - now).num_minutes().max(0);
         let (d, h, m) = (mins / 1440, (mins % 1440) / 60, mins % 60);
         let countdown = if d > 0 {
@@ -108,11 +110,9 @@ impl UsageSegment {
     /// network. Also refreshes the on-disk cache so a new session's first
     /// renders (before rate_limits appears) don't fall back to the API.
     fn collect_from_stdin(&self, limits: &RateLimits) -> UsageData {
-        let window = |w: &crate::config::RateLimitWindow| {
-            (
-                w.used_percentage.unwrap_or(0.0),
-                w.resets_at.and_then(Self::epoch_to_rfc3339),
-            )
+        let window = |w: &crate::config::RateLimitWindow| UsageWindow {
+            util: w.used_percentage.unwrap_or(0.0),
+            reset: w.resets_at.and_then(Self::epoch_to_rfc3339),
         };
         let five_hour = limits.five_hour.as_ref().map(window);
         let seven_day = limits.seven_day.as_ref().map(window);
@@ -124,10 +124,10 @@ impl UsageSegment {
             .unwrap_or(false);
         if !cache_fresh {
             self.save_cache(&ApiUsageCache {
-                five_hour_utilization: five_hour.as_ref().map(|(u, _)| *u).unwrap_or(0.0),
-                five_hour_resets_at: five_hour.as_ref().and_then(|(_, r)| r.clone()),
-                seven_day_utilization: seven_day.as_ref().map(|(u, _)| *u).unwrap_or(0.0),
-                resets_at: seven_day.as_ref().and_then(|(_, r)| r.clone()),
+                five_hour_utilization: five_hour.as_ref().map(|w| w.util),
+                five_hour_resets_at: five_hour.as_ref().and_then(|w| w.reset.clone()),
+                seven_day_utilization: seven_day.as_ref().map(|w| w.util),
+                resets_at: seven_day.as_ref().and_then(|w| w.reset.clone()),
                 cached_at: Utc::now().to_rfc3339(),
             });
         }
@@ -287,8 +287,14 @@ impl UsageSegment {
             .unwrap_or(false);
 
         let from_cache = |c: ApiUsageCache| UsageData {
-            five_hour: Some((c.five_hour_utilization, c.five_hour_resets_at)),
-            seven_day: Some((c.seven_day_utilization, c.resets_at)),
+            five_hour: c.five_hour_utilization.map(|util| UsageWindow {
+                util,
+                reset: c.five_hour_resets_at,
+            }),
+            seven_day: c.seven_day_utilization.map(|util| UsageWindow {
+                util,
+                reset: c.resets_at,
+            }),
             seven_day_fable: None,
         };
 
@@ -298,16 +304,22 @@ impl UsageSegment {
         match self.fetch_api_usage(api_base_url, &token, timeout) {
             Some(response) => {
                 let cache = ApiUsageCache {
-                    five_hour_utilization: response.five_hour.utilization,
+                    five_hour_utilization: Some(response.five_hour.utilization),
                     five_hour_resets_at: response.five_hour.resets_at.clone(),
-                    seven_day_utilization: response.seven_day.utilization,
+                    seven_day_utilization: Some(response.seven_day.utilization),
                     resets_at: response.seven_day.resets_at.clone(),
                     cached_at: Utc::now().to_rfc3339(),
                 };
                 self.save_cache(&cache);
                 Some(UsageData {
-                    five_hour: Some((response.five_hour.utilization, response.five_hour.resets_at)),
-                    seven_day: Some((response.seven_day.utilization, response.seven_day.resets_at)),
+                    five_hour: Some(UsageWindow {
+                        util: response.five_hour.utilization,
+                        reset: response.five_hour.resets_at,
+                    }),
+                    seven_day: Some(UsageWindow {
+                        util: response.seven_day.utilization,
+                        reset: response.seven_day.resets_at,
+                    }),
                     seven_day_fable: None,
                 })
             }
@@ -338,8 +350,9 @@ impl Segment for UsageSegment {
 
         // Icon reflects the highest-watermark window; color stays fixed (config).
         let max_util = [&data.five_hour, &data.seven_day, &data.seven_day_fable]
-            .iter()
-            .filter_map(|w| w.as_ref().map(|(u, _)| *u))
+            .into_iter()
+            .flatten()
+            .map(|w| w.util)
             .fold(0.0f64, f64::max);
         let dynamic_icon = circle_gauge(max_util).to_string();
 
@@ -348,21 +361,20 @@ impl Segment for UsageSegment {
         // countdown as a primary value with the absolute reset time in
         // parentheses as secondary; "-" when the data source omits the
         // window (distinct from a real 0%).
+        let now = chrono::Local::now();
         let window_text = |label: &str, w: &Option<UsageWindow>, with_day_word: bool| match w {
-            Some((util, reset)) => {
-                let reset_part = Self::format_reset(reset.as_deref(), with_day_word)
-                    .map(|(cd, abs)| {
-                        format!("\x1b[38;5;252m{cd}\x1b[0m \x1b[38;5;245m({abs})\x1b[0m")
-                    })
-                    .unwrap_or_else(|| "\x1b[38;5;245m?\x1b[0m".to_string());
+            Some(w) => {
+                let reset_part = Self::format_reset(w.reset.as_deref(), with_day_word, now)
+                    .map(|(cd, abs)| format!("{LIGHT}{cd}{RESET} {DIM}({abs}){RESET}"))
+                    .unwrap_or_else(|| format!("{DIM}?{RESET}"));
                 format!(
-                    "\x1b[38;5;245m{label} {}{} {}%\x1b[0m {reset_part}",
-                    Self::util_color(*util),
-                    circle_gauge(*util),
-                    util.round() as u8,
+                    "{DIM}{label} \x1b[38;5;{}m{} {}%{RESET} {reset_part}",
+                    util_color_256(w.util),
+                    circle_gauge(w.util),
+                    w.util.round() as u8,
                 )
             }
-            None => format!("\x1b[38;5;245m{label} -\x1b[0m"),
+            None => format!("{DIM}{label} -{RESET}"),
         };
         let mut primary = format!(
             "{}\x1b[90m · \x1b[0m{}",
@@ -370,10 +382,12 @@ impl Segment for UsageSegment {
             window_text("7d", &data.seven_day, true),
         );
         if data.seven_day_fable.is_some() {
-            primary.push_str(&format!(
+            use std::fmt::Write as _;
+            let _ = write!(
+                primary,
                 "\x1b[90m · \x1b[0m{}",
                 window_text("fable", &data.seven_day_fable, true),
-            ));
+            );
         }
 
         let mut metadata = HashMap::new();

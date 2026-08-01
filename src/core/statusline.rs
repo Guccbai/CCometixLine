@@ -324,16 +324,15 @@ impl StatusLineGenerator {
         }
     }
 
-    /// Map a segment's optional `dynamic_color` metadata to a concrete color that
-    /// overrides the configured icon/text colors. Used for threshold coloring.
+    /// Map a segment's optional `dynamic_color` metadata (a 256-color code,
+    /// see `segments::util_color_256`) to a concrete color that overrides the
+    /// configured icon/text colors. Used for threshold coloring.
     fn dynamic_color_from_metadata(data: &SegmentData) -> Option<AnsiColor> {
-        // Soft 256-color state tones, matching usage.rs::util_color.
-        match data.metadata.get("dynamic_color").map(String::as_str) {
-            Some("green") => Some(AnsiColor::Color256 { c256: 108 }),
-            Some("yellow") => Some(AnsiColor::Color256 { c256: 179 }),
-            Some("red") => Some(AnsiColor::Color256 { c256: 167 }),
-            _ => None,
-        }
+        data.metadata
+            .get("dynamic_color")?
+            .parse::<u8>()
+            .ok()
+            .map(|c256| AnsiColor::Color256 { c256 })
     }
 
     fn get_icon(&self, config: &SegmentConfig) -> String {

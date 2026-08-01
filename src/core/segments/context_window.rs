@@ -1,4 +1,4 @@
-use super::{circle_gauge, Segment, SegmentData};
+use super::{circle_gauge, util_color_256, Segment, SegmentData};
 use crate::config::{InputData, ModelConfig, SegmentId, TranscriptEntry};
 use std::collections::HashMap;
 use std::fs;
@@ -72,16 +72,12 @@ impl Segment for ContextWindowSegment {
         metadata.insert("limit".to_string(), context_limit.to_string());
         metadata.insert("model".to_string(), input.model.id.clone());
 
-        // Threshold coloring (OMC thresholds): <70% green, 70-85% yellow, >85% red.
+        // Threshold coloring: emit the shared state tone as a 256-color code.
         if let Some(rate) = rate_opt {
-            let color = if rate >= 85.0 {
-                "red"
-            } else if rate >= 70.0 {
-                "yellow"
-            } else {
-                "green"
-            };
-            metadata.insert("dynamic_color".to_string(), color.to_string());
+            metadata.insert(
+                "dynamic_color".to_string(),
+                util_color_256(rate).to_string(),
+            );
         }
 
         Some(SegmentData {

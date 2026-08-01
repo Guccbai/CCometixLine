@@ -50,6 +50,19 @@ pub fn weekday_zh(weekday: chrono::Weekday) -> &'static str {
     }
 }
 
+/// 256-color state tone for a 0-100 utilization percentage, shared by the
+/// ctx and usage segments (OMC thresholds): <70% sage green, 70-85% amber,
+/// ≥85% soft red. The single source for both thresholds and palette.
+pub fn util_color_256(percent: f64) -> u8 {
+    if percent >= 85.0 {
+        167 // soft red
+    } else if percent >= 70.0 {
+        179 // amber
+    } else {
+        108 // sage green
+    }
+}
+
 /// Nerd Font circle_slice glyph for a 0-100 percentage: an 8-step pie gauge
 /// in a single fixed-width (PUA, unambiguous) character. Coarse by design —
 /// the exact value is always rendered as a number next to it.
