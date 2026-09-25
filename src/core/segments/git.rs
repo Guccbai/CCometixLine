@@ -39,135 +39,66 @@ impl GitSegment {
         self
     }
 
+    /// One `git status --porcelain=v2 --branch` call yields branch, upstream
+    /// ahead/behind, HEAD sha and working-tree state; None outside a repo.
     fn get_git_info(&self, working_dir: &str) -> Option<GitInfo> {
-        if !self.is_git_repository(working_dir) {
-            return None;
-        }
-
-        let branch = self
-            .get_branch(working_dir)
-            .unwrap_or_else(|| "detached".to_string());
-        let status = self.get_status(working_dir);
-        let (ahead, behind) = self.get_ahead_behind(working_dir);
-        let sha = if self.show_sha {
-            self.get_sha(working_dir)
-        } else {
-            None
-        };
-        Some(GitInfo {
-            branch,
-            status,
-            ahead,
-            behind,
-            sha,
-        })
-    }
-
-    fn is_git_repository(&self, working_dir: &str) -> bool {
-        Command::new("git")
-            .args(["--no-optional-locks", "rev-parse", "--git-dir"])
-            .current_dir(working_dir)
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
-
-    fn get_branch(&self, working_dir: &str) -> Option<String> {
-        if let Ok(output) = Command::new("git")
-            .args(["--no-optional-locks", "branch", "--show-current"])
-            .current_dir(working_dir)
-            .output()
-        {
-            if output.status.success() {
-                let branch = String::from_utf8(output.stdout).ok()?.trim().to_string();
-                if !branch.is_empty() {
-                    return Some(branch);
-                }
-            }
-        }
-
-        if let Ok(output) = Command::new("git")
-            .args(["--no-optional-locks", "symbolic-ref", "--short", "HEAD"])
-            .current_dir(working_dir)
-            .output()
-        {
-            if output.status.success() {
-                let branch = String::from_utf8(output.stdout).ok()?.trim().to_string();
-                if !branch.is_empty() {
-                    return Some(branch);
-                }
-            }
-        }
-
-        None
-    }
-
-    fn get_status(&self, working_dir: &str) -> GitStatus {
         let output = Command::new("git")
-            .args(["--no-optional-locks", "status", "--porcelain"])
-            .current_dir(working_dir)
-            .output();
-
-        match output {
-            Ok(output) if output.status.success() => {
-                let status_text = String::from_utf8(output.stdout).unwrap_or_default();
-
-                if status_text.trim().is_empty() {
-                    return GitStatus::Clean;
-                }
-
-                if status_text.contains("UU")
-                    || status_text.contains("AA")
-                    || status_text.contains("DD")
-                {
-                    GitStatus::Conflicts
-                } else {
-                    GitStatus::Dirty
-                }
-            }
-            _ => GitStatus::Clean,
-        }
-    }
-
-    fn get_ahead_behind(&self, working_dir: &str) -> (u32, u32) {
-        let ahead = self.get_commit_count(working_dir, "@{u}..HEAD");
-        let behind = self.get_commit_count(working_dir, "HEAD..@{u}");
-        (ahead, behind)
-    }
-
-    fn get_commit_count(&self, working_dir: &str, range: &str) -> u32 {
-        let output = Command::new("git")
-            .args(["--no-optional-locks", "rev-list", "--count", range])
-            .current_dir(working_dir)
-            .output();
-
-        match output {
-            Ok(output) if output.status.success() => String::from_utf8(output.stdout)
-                .ok()
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(0),
-            _ => 0,
-        }
-    }
-
-    fn get_sha(&self, working_dir: &str) -> Option<String> {
-        let output = Command::new("git")
-            .args(["--no-optional-locks", "rev-parse", "--short=7", "HEAD"])
+            .args([
+                "--no-optional-locks",
+                "status",
+                "--porcelain=v2",
+                "--branch",
+            ])
             .current_dir(working_dir)
             .output()
             .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let mut info = parse_porcelain_v2(&String::from_utf8_lossy(&output.stdout));
+        if !self.show_sha {
+            info.sha = None;
+        }
+        Some(info)
+    }
+}
 
-        if output.status.success() {
-            let sha = String::from_utf8(output.stdout).ok()?.trim().to_string();
-            if sha.is_empty() {
-                None
-            } else {
-                Some(sha)
+/// Parse `git status --porcelain=v2 --branch` output. Headers start with
+/// `# `; `u` entries are unmerged (conflicts); any other entry means dirty.
+fn parse_porcelain_v2(text: &str) -> GitInfo {
+    let mut info = GitInfo {
+        branch: "detached".to_string(),
+        status: GitStatus::Clean,
+        ahead: 0,
+        behind: 0,
+        sha: None,
+    };
+    for line in text.lines() {
+        if let Some(header) = line.strip_prefix("# ") {
+            let (key, value) = header.split_once(' ').unwrap_or((header, ""));
+            match key {
+                "branch.oid" if value != "(initial)" => {
+                    info.sha = Some(value.chars().take(7).collect());
+                }
+                "branch.head" if value != "(detached)" => info.branch = value.to_string(),
+                "branch.ab" => {
+                    for part in value.split_whitespace() {
+                        if let Some(n) = part.strip_prefix('+') {
+                            info.ahead = n.parse().unwrap_or(0);
+                        } else if let Some(n) = part.strip_prefix('-') {
+                            info.behind = n.parse().unwrap_or(0);
+                        }
+                    }
+                }
+                _ => {}
             }
-        } else {
-            None
+        } else if line.starts_with("u ") {
+            info.status = GitStatus::Conflicts;
+        } else if !line.is_empty() && info.status == GitStatus::Clean {
+            info.status = GitStatus::Dirty;
         }
     }
+    info
 }
 
 impl Segment for GitSegment {
@@ -213,5 +144,43 @@ impl Segment for GitSegment {
 
     fn id(&self) -> SegmentId {
         SegmentId::Git
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clean_branch_with_upstream() {
+        let info = parse_porcelain_v2(
+            "# branch.oid 3c43efd0123456789\n# branch.head master\n# branch.upstream origin/master\n# branch.ab +2 -1\n",
+        );
+        assert_eq!(info.branch, "master");
+        assert_eq!(info.status, GitStatus::Clean);
+        assert_eq!((info.ahead, info.behind), (2, 1));
+        assert_eq!(info.sha.as_deref(), Some("3c43efd"));
+    }
+
+    #[test]
+    fn file_names_do_not_fake_conflicts() {
+        // Regression: a path containing "DD"/"UU"/"AA" used to read as a conflict.
+        let info = parse_porcelain_v2("# branch.head main\n? DDL.sql\n? UUID.txt\n");
+        assert_eq!(info.status, GitStatus::Dirty);
+    }
+
+    #[test]
+    fn unmerged_entry_is_conflict() {
+        let info = parse_porcelain_v2(
+            "# branch.head main\n1 .M N... 100644 100644 100644 a b x.rs\nu AU N... 100644 100644 100644 100644 a b c y.rs\n",
+        );
+        assert_eq!(info.status, GitStatus::Conflicts);
+    }
+
+    #[test]
+    fn detached_and_initial() {
+        let info = parse_porcelain_v2("# branch.oid (initial)\n# branch.head (detached)\n");
+        assert_eq!(info.branch, "detached");
+        assert_eq!(info.sha, None);
     }
 }
