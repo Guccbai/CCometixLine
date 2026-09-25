@@ -404,3 +404,43 @@ impl Segment for UsageSegment {
         SegmentId::Usage
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{Duration, Local, TimeZone};
+
+    fn reset_after(now: DateTime<Local>, d: Duration, day_word: bool) -> Option<(String, String)> {
+        UsageSegment::format_reset(Some(&(now + d).to_rfc3339()), day_word, now)
+    }
+
+    #[test]
+    fn format_reset_scales_with_horizon() {
+        // Fri 2026-09-25 15:00 local.
+        let now = Local.with_ymd_and_hms(2026, 9, 25, 15, 0, 0).unwrap();
+        let r = |d, w| reset_after(now, d, w).unwrap();
+
+        assert_eq!(
+            r(Duration::minutes(38), false),
+            ("38m".into(), "15:38".into())
+        );
+        assert_eq!(
+            r(Duration::minutes(4 * 60 + 12), false),
+            ("4h12m".into(), "19:12".into())
+        );
+        assert_eq!(r(Duration::hours(2), true).1, "今天 17:00");
+        assert_eq!(
+            r(Duration::days(1), true),
+            ("1d0h".into(), "明天 15:00".into())
+        );
+        assert_eq!(r(Duration::days(3), true).1, "周一 15:00");
+        assert_eq!(r(Duration::days(10), true).1, "10/05 周一 15:00");
+        // A reset already in the past clamps to zero instead of going negative.
+        assert_eq!(r(Duration::minutes(-5), false).0, "0m");
+        assert_eq!(
+            UsageSegment::format_reset(Some("garbage"), false, now),
+            None
+        );
+        assert_eq!(UsageSegment::format_reset(None, false, now), None);
+    }
+}
